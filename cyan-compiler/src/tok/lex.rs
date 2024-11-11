@@ -198,4 +198,19 @@ mod test_lex {
         assert_matches!(toks[17], Tok::Static(StaticTok::CloseCurly));
         assert_matches!(toks[18], Tok::Linebreaks(_));
     }
+
+    #[test]
+    fn test_keyword_identifer_disambiguation() {
+        // This is an identifier even though it begins with a keyword.
+        let source_text = "procaaaa".as_bytes();     
+
+        let string_interner = StringInterner::default();
+        let mut tokbuf = TokBuf::new(&string_interner);
+        lex(source_text, &mut tokbuf);
+        let toks: Vec<Tok> = tokbuf.iter().map(|(_, tok)| tok).collect();
+
+        assert_eq!(toks.len(), 1);
+        assert_matches!(toks[0], Tok::Ident(ident));
+        assert_eq!(ident.source_text(), source_text);
+    }
 }
