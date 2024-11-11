@@ -5,7 +5,7 @@ use crate::util::ascii;
 use crate::util::string_interner::StringInterner;
 use crate::tok::tok::{LineComment, DecIntLiteral, Linebreaks, StaticTok, Tok, StrLiteral, Unexpected};
 use crate::tok::tokbuf::TokBuf;
-use crate::tok::ident::{Ident, iter_ident_prefix_chs, is_ident_ch, is_ident_str};
+use crate::tok::ident::{Ident, iter_ident_prefix_chs, is_ident_prefix_ch, is_ident_ch, is_ident_str};
 use crate::tok::tok::Spaces;
 
 struct ByteStream<'a> { bytes: &'a [u8], pos: usize }
@@ -81,7 +81,7 @@ pub fn lex<'a>(source_text: &[u8], tokbuf: &mut TokBuf<'a>) {
             Some(Prefix::Linebreak) => lex_linebreak(&mut ctx),
             Some(Prefix::Space) => lex_space(&mut ctx),
             Some(Prefix::DoubleForwardSlash) => lex_double_forward_slash(&mut ctx), 
-            Some(Prefix::IdentPrefixCh) => lex_ident_prefix_ch(&mut ctx), 
+            Some(Prefix::IdentPrefixCh) => lex_ident_prefix_ch(&mut ctx, 0), 
             None => lex_other(&mut ctx)
         }
     }    
@@ -115,7 +115,7 @@ fn lex_stok(ctx: &mut LexContext, stok: StaticTok) {
     if is_ident_str(stok.source_text()) {
         if let Some(next) = ctx.stream.rem().get(stok.source_text().len()) {
             if is_ident_ch(*next) {
-                lex_ident_prefix_ch(ctx);
+                lex_ident_prefix_ch(ctx, stok.source_text().len());
                 return;
             }
         }
@@ -144,8 +144,12 @@ fn lex_double_forward_slash(ctx: &mut LexContext) {
     ctx.tokbuf.push(&Tok::LineComment(LineComment::new(content)));
 }
 
-fn lex_ident_prefix_ch(ctx: &mut LexContext) {
-    let source_text = ctx.stream.advance_while(|ch| is_ident_ch(ch));
+fn lex_ident_prefix_ch(ctx: &mut LexContext, assume_n: usize) {
+    let begin = ctx.stream.pos;
+    assert!(is_ident_prefix_ch(ctx.stream.advance()));
+    ctx.stream.advance_n(assume_n);
+    ctx.stream.advance_while(|ch| is_ident_ch(ch));
+    let source_text = &ctx.stream.bytes[begin..ctx.stream.pos];
     ctx.tokbuf.push(&Tok::Ident(Ident::new(source_text)));
 }
 
