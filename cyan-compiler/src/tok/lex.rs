@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::sync::LazyLock;
 use crate::util::prefix_tree::PrefixTree;
 use crate::util::ascii;
@@ -50,8 +51,8 @@ enum Prefix {
     IdentPrefixCh
 }
 
-static PREFIX_TREE: LazyLock<PrefixTree<u8, Prefix>> = LazyLock::new(|| {
-    let mut tree: PrefixTree<u8, Prefix> = PrefixTree::default();
+static PREFIX_TREE: LazyLock<PrefixTree<Prefix>> = LazyLock::new(|| {
+    let mut tree: PrefixTree<Prefix> = PrefixTree::default();
     tree.insert_seq(&[ascii::DOUBLE_QUOTE], Prefix::DoubleQuote);
     for digit in ascii::DIGITS {
         tree.insert_seq(&[digit], Prefix::Digit);
@@ -69,14 +70,11 @@ static PREFIX_TREE: LazyLock<PrefixTree<u8, Prefix>> = LazyLock::new(|| {
 });
 
 
-pub fn lex<'a>(source_text: &[u8], string_interner: &'a StringInterner) -> TokBuf<'a> {
-    let mut ctx = LexContext { 
-        tokbuf: TokBuf::new(string_interner),
-        stream: ByteStream::new(source_text)
-    };
+pub fn lex<'a>(source_text: &[u8], tokbuf: &mut TokBuf<'a>) {
+    let mut ctx = LexContext { tokbuf, stream: ByteStream::new(source_text) };
     
     while ctx.stream.rem().len() > 0 {
-        match PREFIX_TREE.get(ctx.stream.rem().iter()) {
+        match PREFIX_TREE.get(ctx.stream.rem().iter().copied()) {
             Some(Prefix::DoubleQuote) => lex_double_quote(&mut ctx),
             Some(Prefix::Digit) => lex_digit(&mut ctx),
             Some(Prefix::Static(stok)) => lex_stok(&mut ctx, *stok),
@@ -86,13 +84,11 @@ pub fn lex<'a>(source_text: &[u8], string_interner: &'a StringInterner) -> TokBu
             Some(Prefix::IdentPrefixCh) => lex_ident_prefix_ch(&mut ctx), 
             None => lex_other(&mut ctx)
         }
-    }
-    
-    return ctx.tokbuf;
+    }    
 }
 
-struct LexContext<'a, 'b> {
-    tokbuf: TokBuf<'a>,
+struct LexContext<'a, 'b, 'c> {
+    tokbuf: &'c mut TokBuf<'a>,
     stream: ByteStream<'b>
 }
 
@@ -156,4 +152,50 @@ fn lex_ident_prefix_ch(ctx: &mut LexContext) {
 fn lex_other(ctx: &mut LexContext) {
     let ch = ctx.stream.advance();
     ctx.tokbuf.push(&Tok::Unexpected(Unexpected { ch }));
+}
+
+#[cfg(test)]
+mod test_lex {
+    use crate::tok::tok::{Tok, StaticTok};
+    use crate::tok::tokbuf::TokBuf;
+    use crate::util::string_interner::StringInterner;
+    use crate::util::misc::assert_matches;
+    use super::lex;
+
+    #[test]
+    fn smoke_test() {
+        let source_text = "\
+            proc main() {\n    \
+                std::println(\"Hello World\");\n\
+            }\n\
+        ".as_bytes();
+        
+        let string_interner = StringInterner::default();
+        let mut tokbuf = TokBuf::new(&string_interner);
+        lex(source_text, &mut tokbuf);
+        let toks: Vec<Tok> = tokbuf.iter().map(|(_, tok)| tok).collect();
+        
+        assert_matches!(toks[0], Tok::Static(StaticTok::Proc));
+        assert_matches!(toks[1], Tok::Spaces(_));
+        assert_matches!(toks[2], Tok::Ident(main_ident));
+        assert_eq!(main_ident.source_text(), "main".as_bytes());
+        assert_matches!(toks[3], Tok::Static(StaticTok::OpenParen));
+        assert_matches!(toks[4], Tok::Static(StaticTok::CloseParen));
+        assert_matches!(toks[5], Tok::Spaces(_));
+        assert_matches!(toks[6], Tok::Static(StaticTok::OpenCurly));
+        assert_matches!(toks[7], Tok::Linebreaks(_));
+        assert_matches!(toks[8], Tok::Spaces(_));
+        assert_matches!(toks[9], Tok::Ident(std_ident));
+        assert_eq!(std_ident.source_text(), "std".as_bytes());
+        assert_matches!(toks[10], Tok::Static(StaticTok::ColonColon));
+        assert_matches!(toks[11], Tok::Ident(println_ident));
+        assert_eq!(println_ident.source_text(), "println".as_bytes());
+        assert_matches!(toks[12], Tok::Static(StaticTok::OpenParen));
+        assert_matches!(toks[13], Tok::StrLiteral(_));
+        assert_matches!(toks[14], Tok::Static(StaticTok::CloseParen));
+        assert_matches!(toks[15], Tok::Static(StaticTok::Semicolon));
+        assert_matches!(toks[16], Tok::Linebreaks(_));
+        assert_matches!(toks[17], Tok::Static(StaticTok::CloseCurly));
+        assert_matches!(toks[18], Tok::Linebreaks(_));
+    }
 }

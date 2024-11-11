@@ -7,11 +7,11 @@ pub enum Tok<'a> {
     Static(StaticTok), 
     StrLiteral(StrLiteral<'a>),
     DecIntLiteral(DecIntLiteral<'a>),
-    Ident(Ident<'a>),
+    Ident(Ident<'a>),   
     Linebreaks(Linebreaks),
     Spaces(Spaces),
     LineComment(LineComment<'a>),
-    Unexpected(Unexpected)
+    Unexpected(Unexpected),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -44,6 +44,8 @@ pub enum StaticTok {
     ColonColon = 25,
     Percent = 26,
     Exclamation = 27,
+    Ampersand = 28,
+    Semicolon = 29
 }
 
 impl StaticTok {
@@ -76,6 +78,8 @@ impl StaticTok {
             Self::ColonColon,
             Self::Percent,
             Self::Exclamation,
+            Self::Ampersand,
+            Self::Semicolon
         ];
     }
     
@@ -102,8 +106,8 @@ impl StaticTok {
             StaticTok::Proc => "proc",
             StaticTok::OpenParen => "(",
             StaticTok::CloseParen => ")",
-            StaticTok::OpenCurly => "{{",
-            StaticTok::CloseCurly => "}}",
+            StaticTok::OpenCurly => "{",
+            StaticTok::CloseCurly => "}",
             StaticTok::OpenSquare => "[",
             StaticTok::CloseSquare => "]",
             StaticTok::LessThan => "<",
@@ -117,6 +121,8 @@ impl StaticTok {
             StaticTok::ColonColon => "::",
             StaticTok::Percent => "%",
             StaticTok::Exclamation => "!",
+            StaticTok::Ampersand => "&",
+            StaticTok::Semicolon => ";",
         }.as_bytes();
     }
 }

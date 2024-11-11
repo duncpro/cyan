@@ -5,3 +5,4 @@ pub trait Truncate<S> {
 impl Truncate<u8> for u32 {
     fn truncate(self) -> u8 { return self as u8; }
 }
+

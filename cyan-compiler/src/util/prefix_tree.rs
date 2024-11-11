@@ -1,22 +1,64 @@
-pub struct PrefixTree<K, V> {
-    map: std::collections::HashMap<K, PrefixTree<K, V>>,
-    value: Option<V>
-}
+pub struct PrefixTree<V> { table: Table<V>, value: Option<V> }
 
-impl<K, V> Default for PrefixTree<K, V> {
+struct Table<V> { table: Vec<TableEntry<V>> }
+
+struct TableEntry<V> { key: u8, value: PrefixTree<V> }
+
+impl<V> Default for PrefixTree<V> {
     fn default() -> Self {
         Self {
-            map: std::collections::HashMap::new(),
-            value: None 
+            table: Table::default(),
+            value: None
         }
     }
 }
 
-impl<K: std::hash::Hash + Eq, V> PrefixTree<K, V> {
-    pub fn insert_iter(&mut self, mut iter: impl Iterator<Item = K>, value: V) -> Option<V> {
+impl<V> Default for Table<V> {
+    fn default() -> Self {
+        Self {
+            table: Vec::default()
+        }
+    }
+}
+
+impl<V> Table<V> {
+    fn get(&self, key: u8) -> Option<&PrefixTree<V>> {
+        let idx = self.table.binary_search_by_key(&key, |entry| entry.key).ok()?;
+        return Some(&self.table[idx].value);
+    }
+
+    fn entry(&mut self, key: u8) -> &mut PrefixTree<V> {
+        let result = self.table.binary_search_by_key(&key, |entry| entry.key);
+        match result {
+            Ok(idx) => {
+                return &mut self.table[idx].value;    
+            },
+            Err(idx) => {
+                let new_node: PrefixTree<V> = PrefixTree::default();
+                let new_entry: TableEntry<V> = TableEntry { key, value: new_node };
+                self.table.insert(idx, new_entry);
+                return &mut self.table[idx].value;
+            },
+        }        
+    }
+}
+
+impl<V> PrefixTree<V> {
+    pub fn get(&self, mut seq: impl Iterator<Item = u8>) -> Option<&V> {
+        if let Some(next_key) = seq.next() {
+            if let Some(next_child) = self.table.get(next_key) {
+                if let Some(longer_match) = next_child.get(seq) {
+                    return Some(longer_match);
+                }
+            }
+        }
+        return self.value.as_ref();
+    }
+    
+    pub fn insert_iter(&mut self, mut iter: impl Iterator<Item = u8>, value: V) -> Option<V> {
         match iter.next() {
             Some(key) => {
-                let child_node = self.map.entry(key).or_default();
+                let child_node = self.table.entry(key);
                 return child_node.insert_iter(iter, value);
             },
             None => {
@@ -26,22 +68,8 @@ impl<K: std::hash::Hash + Eq, V> PrefixTree<K, V> {
             },
         }
     }
-}
 
-impl<'a, K: std::hash::Hash + Eq + Clone + 'a, V> PrefixTree<K, V> {
-    pub fn insert_seq(&mut self, seq: impl IntoIterator<Item = &'a K>, value: V) -> Option<V> {
-        return self.insert_iter(seq.into_iter().cloned(), value);
-    }
-
-    pub fn get(&self, mut seq: impl Iterator<Item = &'a K>) -> Option<&V> {
-        if let Some(next_key) = seq.next() {
-            if let Some(next_child) = self.map.get(next_key) {
-                if let Some(longer_match) = next_child.get(seq) {
-                    return Some(longer_match);
-                }
-            }
-        }
-        return self.value.as_ref();
+    pub fn insert_seq(&mut self, seq: &[u8], value: V) -> Option<V> {
+        return self.insert_iter(seq.iter().copied(), value);
     }
 }
-
