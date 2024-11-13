@@ -1,6 +1,7 @@
 use std::num::NonZeroU8;
 use crate::util::ascii;
 use crate::tok::ident::Ident;
+use crate::util::str_list::StrRef;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Tok<'a> {
@@ -131,71 +132,29 @@ impl StaticTok {
 pub struct StrLiteral<'a> {
     // The entirety of the source text of this string literal including the
     // leading quote and the trailing quote (if closed).
-    source_text: &'a [u8]
-}
-
-impl<'a> StrLiteral<'a> {
-    pub fn source_text(&self) -> &'a [u8] { return self.source_text; }
-    pub fn new(source_text: &'a [u8]) -> Self {
-        assert!(source_text.first().copied() == Some(ascii::DOUBLE_QUOTE));
-        // Do not assert the existence of a closing double quote. The literal
-        // could be unclosed.
-        return Self { source_text };
-    }
+    pub str_ref: StrRef<'a>
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct DecIntLiteral<'a> {
     /// The character-encoded decimal digits from the source text.
     /// This slice is guaranteed to have a length of at least one.
-    digits: &'a [u8]
-}
-
-impl<'a> DecIntLiteral<'a> {
-    pub fn digits(&self) -> &'a [u8] { return self.digits; }
-    pub fn new(digits: &'a [u8]) -> Self {
-        assert!(digits.iter().all(|ch| ascii::is_numeric_ch(*ch)));
-        assert!(digits.len() > 0);
-        return Self { digits }
-    }
+    pub str_ref: StrRef<'a>
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Linebreaks { count: u32 }
-
-impl Linebreaks {
-    pub fn count(&self) -> u32 { return self.count; }
-    pub fn new(count: u32) -> Self {
-        assert!(count > 0);
-        return Self { count };
-    }
-}
+pub struct Linebreaks { pub count: u32 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Spaces { count: u32 }
-
-impl Spaces {
-    pub fn count(&self) -> u32 { return self.count; }
-    pub fn new(count: u32) -> Self {
-        assert!(count > 0);
-        return Self { count };
-    }
-}
+pub struct Spaces { pub count: u32 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct LineComment<'a> {
     /// The source-text appearing after the double-slash prefix but before the
     /// terminating linebreak.
-    content: &'a [u8]
-}
-
-impl<'a> LineComment<'a> {
-    pub fn content(&self) -> &'a [u8] { return self.content; }
-    pub fn new(content: &'a [u8]) -> Self {
-        assert!(!content.contains(&ascii::LINEBREAK));
-        return Self { content };
-    }
+    pub str_ref: StrRef<'a>
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Unexpected { pub ch: u8 }
+

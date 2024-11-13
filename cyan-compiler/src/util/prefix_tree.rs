@@ -1,3 +1,12 @@
+/// A prefix tree whose nodes are backed by a sorted array.
+///
+/// # Worst-Case Runtime Complexity
+/// - Lookup: `log_2(256) * m = O(m)` where `m` is the length in bytes of the prefix to match.
+/// - Insertion: `(log_2(256) + 256) * m = O(m)` where `m` is the length in bytes of the prefix to
+///   insert.
+///
+/// So, this implementation is memory-effecient, offering fast lookups but slower insertions,
+/// making it well suited for cases where insertions occur only during initialization.
 pub struct PrefixTree<V> { table: Table<V>, value: Option<V> }
 
 struct Table<V> { table: Vec<TableEntry<V>> }
@@ -6,18 +15,13 @@ struct TableEntry<V> { key: u8, value: PrefixTree<V> }
 
 impl<V> Default for PrefixTree<V> {
     fn default() -> Self {
-        Self {
-            table: Table::default(),
-            value: None
-        }
+        Self { table: Table::default(), value: None }
     }
 }
 
 impl<V> Default for Table<V> {
     fn default() -> Self {
-        Self {
-            table: Vec::default()
-        }
+        Self { table: Vec::default() }
     }
 }
 

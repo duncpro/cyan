@@ -1,14 +1,14 @@
+use crate::util::str_list::StrRef;
 use crate::util::ascii;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Ident<'a> {
-    source_text: &'a [u8]
+    pub source_text: StrRef<'a>
 }
 
 impl<'a> Ident<'a> {
-    pub fn source_text(&self) -> &'a [u8] { return self.source_text; }
-    pub fn new(source_text: &'a [u8]) -> Self {
-        assert!(is_ident_str(source_text));
+     pub fn new(slice: &'a [u8]) -> Self {
+        let source_text = StrRef::Slice(slice);
         return Self { source_text };
     }
 }

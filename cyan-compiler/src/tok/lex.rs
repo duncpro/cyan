@@ -1,12 +1,12 @@
-use std::cell::OnceCell;
 use std::sync::LazyLock;
 use crate::util::prefix_tree::PrefixTree;
 use crate::util::ascii;
-use crate::util::string_interner::StringInterner;
+use crate::util::str_interner::StrInterner;
 use crate::tok::tok::{LineComment, DecIntLiteral, Linebreaks, StaticTok, Tok, StrLiteral, Unexpected};
 use crate::tok::tokbuf::TokBuf;
 use crate::tok::ident::{Ident, iter_ident_prefix_chs, is_ident_prefix_ch, is_ident_ch, is_ident_str};
 use crate::tok::tok::Spaces;
+use crate::util::str_list::StrRef;
 
 struct ByteStream<'a> { bytes: &'a [u8], pos: usize }
 
@@ -99,13 +99,15 @@ fn lex_double_quote(ctx: &mut LexContext) {
     ctx.stream.advance_if(|ch| ch == ascii::DOUBLE_QUOTE); // Advance past closing double quote.
     let end = ctx.stream.pos;
     let source_text = &ctx.stream.bytes[begin..end];
-    ctx.tokbuf.push(&Tok::StrLiteral(StrLiteral::new(source_text)));
+    let str_ref = StrRef::Slice(source_text);
+    ctx.tokbuf.push(&Tok::StrLiteral(StrLiteral { str_ref }));
     
 }
 
 fn lex_digit(ctx: &mut LexContext) {
     let digits = ctx.stream.advance_while(|ch| ascii::is_numeric_ch(ch));
-    ctx.tokbuf.push(&Tok::DecIntLiteral(DecIntLiteral::new(digits)));
+    let str_ref = StrRef::Slice(digits);
+    ctx.tokbuf.push(&Tok::DecIntLiteral(DecIntLiteral { str_ref }));
 }
 
 fn lex_stok(ctx: &mut LexContext, stok: StaticTok) {
@@ -129,19 +131,20 @@ fn lex_stok(ctx: &mut LexContext, stok: StaticTok) {
 fn lex_linebreak(ctx: &mut LexContext) {
     let linebreaks = ctx.stream.advance_while(|ch| ch == ascii::LINEBREAK);
     let count = u32::try_from(linebreaks.len()).unwrap();
-    ctx.tokbuf.push(&Tok::Linebreaks(Linebreaks::new(count)));
+    ctx.tokbuf.push(&Tok::Linebreaks(Linebreaks { count }));
 }
 
 fn lex_space(ctx: &mut LexContext) {
     let spaces = ctx.stream.advance_while(|ch| ch == ascii::SPACE);
     let count = u32::try_from(spaces.len()).unwrap();
-    ctx.tokbuf.push(&Tok::Spaces(Spaces::new(count)));
+    ctx.tokbuf.push(&Tok::Spaces(Spaces { count }));
 }
 
 fn lex_double_forward_slash(ctx: &mut LexContext) {
     ctx.stream.advance_n(2);
     let content = ctx.stream.advance_while(|ch| ch != ascii::LINEBREAK);
-    ctx.tokbuf.push(&Tok::LineComment(LineComment::new(content)));
+    let str_ref = StrRef::Slice(content);
+    ctx.tokbuf.push(&Tok::LineComment(LineComment { str_ref }));
 }
 
 fn lex_ident_prefix_ch(ctx: &mut LexContext, assume_n: usize) {
@@ -162,7 +165,7 @@ fn lex_other(ctx: &mut LexContext) {
 mod test_lex {
     use crate::tok::tok::{Tok, StaticTok};
     use crate::tok::tokbuf::TokBuf;
-    use crate::util::string_interner::StringInterner;
+    use crate::util::str_interner::StrInterner;
     use crate::util::misc::assert_matches;
     use super::lex;
 
@@ -174,7 +177,7 @@ mod test_lex {
             }\n\
         ".as_bytes();
         
-        let string_interner = StringInterner::default();
+        let string_interner = StrInterner::default();
         let mut tokbuf = TokBuf::new(&string_interner);
         lex(source_text, &mut tokbuf);
         let toks: Vec<Tok> = tokbuf.iter().map(|(_, tok)| tok).collect();
@@ -182,7 +185,7 @@ mod test_lex {
         assert_matches!(toks[0], Tok::Static(StaticTok::Proc));
         assert_matches!(toks[1], Tok::Spaces(_));
         assert_matches!(toks[2], Tok::Ident(main_ident));
-        assert_eq!(main_ident.source_text(), "main".as_bytes());
+        assert_eq!(main_ident.source_text.get(), "main".as_bytes());
         assert_matches!(toks[3], Tok::Static(StaticTok::OpenParen));
         assert_matches!(toks[4], Tok::Static(StaticTok::CloseParen));
         assert_matches!(toks[5], Tok::Spaces(_));
@@ -190,10 +193,10 @@ mod test_lex {
         assert_matches!(toks[7], Tok::Linebreaks(_));
         assert_matches!(toks[8], Tok::Spaces(_));
         assert_matches!(toks[9], Tok::Ident(std_ident));
-        assert_eq!(std_ident.source_text(), "std".as_bytes());
+        assert_eq!(std_ident.source_text.get(), "std".as_bytes());
         assert_matches!(toks[10], Tok::Static(StaticTok::ColonColon));
         assert_matches!(toks[11], Tok::Ident(println_ident));
-        assert_eq!(println_ident.source_text(), "println".as_bytes());
+        assert_eq!(println_ident.source_text.get(), "println".as_bytes());
         assert_matches!(toks[12], Tok::Static(StaticTok::OpenParen));
         assert_matches!(toks[13], Tok::StrLiteral(_));
         assert_matches!(toks[14], Tok::Static(StaticTok::CloseParen));
@@ -208,13 +211,13 @@ mod test_lex {
         // This is an identifier even though it begins with a keyword.
         let source_text = "procaaaa".as_bytes();     
 
-        let string_interner = StringInterner::default();
+        let string_interner = StrInterner::default();
         let mut tokbuf = TokBuf::new(&string_interner);
         lex(source_text, &mut tokbuf);
         let toks: Vec<Tok> = tokbuf.iter().map(|(_, tok)| tok).collect();
 
         assert_eq!(toks.len(), 1);
         assert_matches!(toks[0], Tok::Ident(ident));
-        assert_eq!(ident.source_text(), source_text);
+        assert_eq!(ident.source_text.get(), source_text);
     }
 }

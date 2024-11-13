@@ -2,15 +2,16 @@
 //! Chandler Carruth in his talk "Modernizing Compiler Design for Carbon Toolchain" at CppNow 2023.
 //! See https://www.youtube.com/watch?v=ZI198eFghJk&t=2817s.
 
-use std::num::{NonZeroU8, Wrapping};
-use crate::util::string_interner::StringInterner;
+use std::num::NonZeroU8;
+use crate::util::str_interner::StrInterner;
+use crate::util::str_list::{StrRef, StrList, StrListKey, StrListRef};
 use crate::util::bits::Truncate;
 use crate::util::ascii;
 use crate::tok::ident::Ident;
 use crate::tok::tok::{Tok, DecIntLiteral, StaticTok, StrLiteral, LineComment, Spaces, Unexpected};
 use crate::tok::tok::Linebreaks;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct Key { data: u32 }
 
 impl Key {
@@ -40,8 +41,8 @@ impl Key {
 /// the way, never placed in the cache, and therefore never getting in the way of actually useful
 /// information. 
 pub struct TokBuf<'a> {
-    string_interner: &'a StringInterner,
-    str_table: Vec<u8>,
+    string_interner: &'a StrInterner,
+    str_table: StrList, 
 
     /// The densely packed token sequence, intended for consumption by the parser.
     /// Each [`TokBufEntry`] is 32 bits wide. Wide tokens like string literals,
@@ -55,10 +56,10 @@ pub struct TokBuf<'a> {
 }
 
 impl<'a> TokBuf<'a> {
-    pub fn new(string_interner: &'a StringInterner) -> TokBuf<'a> {
+    pub fn new(string_interner: &'a StrInterner) -> TokBuf<'a> {
         return Self { 
             string_interner,
-            str_table: Vec::new(),
+            str_table: StrList::default(),
             buf: Vec::new(),
             lines: Vec::new()
         };
@@ -84,11 +85,11 @@ impl<'a> TokBuf<'a> {
     }
 
     fn push_str_literal(&mut self, lit: &StrLiteral) {
-        let etc = self.insert_str_table_entry(lit.source_text());
+        let etc = self.insert_str_table_entry(lit.str_ref.get());
         let entry = TokBufEntry::new(EntryType::StrLiteral, etc);
         let tok_addr = u32::try_from(self.buf.len()).unwrap();
         self.buf.push(entry);
-        for ch in lit.source_text() {
+        for ch in lit.str_ref.get() {
             if *ch == ascii::LINEBREAK {
                 self.lines.push(tok_addr);
             }
@@ -96,35 +97,34 @@ impl<'a> TokBuf<'a> {
     }
 
     fn push_dec_int_literal(&mut self, lit: &DecIntLiteral) {
-        let etc = self.insert_str_table_entry(lit.digits());
+        let etc = self.insert_str_table_entry(lit.str_ref.get());
         let entry = TokBufEntry::new(EntryType::DecIntLiteral, etc);
         self.buf.push(entry);
     }
 
     fn push_ident(&mut self, ident: &Ident) {
-        let etc = self.string_interner.intern(&ident.source_text()).get();
+        let intern_key = self.string_interner.intern(ident.source_text.get());
+        let etc = u32::try_from(intern_key).unwrap();
         let entry = TokBufEntry::new(EntryType::Ident, etc);
         self.buf.push(entry);
     }
 
     fn push_linebreaks(&mut self, lbs: &Linebreaks) {
-        let etc = lbs.count();
-        let entry = TokBufEntry::new(EntryType::Linebreaks, etc);
+        let entry = TokBufEntry::new(EntryType::Linebreaks, lbs.count);
         let tok_addr = u32::try_from(self.buf.len()).unwrap();
         self.buf.push(entry);
-        for _ in 0..(lbs.count()) {
+        for _ in 0..(lbs.count) {
             self.lines.push(tok_addr);
         }
     }
 
     fn push_spaces(&mut self, spaces: &Spaces) {
-        let etc = spaces.count();
-        let entry = TokBufEntry::new(EntryType::Spaces, etc);
+        let entry = TokBufEntry::new(EntryType::Spaces, spaces.count);
         self.buf.push(entry);
     }
 
     fn push_line_comment(&mut self, lc: &LineComment) {
-        let etc = self.insert_str_table_entry(lc.content());
+        let etc = self.insert_str_table_entry(lc.str_ref.get());
         let entry = TokBufEntry::new(EntryType::LineComment, etc);
         self.buf.push(entry);
     }
@@ -166,6 +166,7 @@ impl<'a> TokBuf<'a> {
         
         match tbe.kind() {
             EntryType::StaticPack => {
+                if key.pack_idx() > 2 { return None; }
                 let pack_offset = key.pack_idx() * 8;
                 let stok_id = (tbe.etc() >> pack_offset).truncate();
                 if stok_id == 0 { return None; }
@@ -174,33 +175,35 @@ impl<'a> TokBuf<'a> {
             },
             EntryType::StrLiteral => {
                 if key.pack_idx() != 0 { return None; }
-                let source_text = self.lookup_str_table_entry(tbe.etc());
-                return Some(Tok::StrLiteral(StrLiteral::new(source_text)));
+                let str_ref = self.make_str_table_ref(tbe.etc());
+                return Some(Tok::StrLiteral(StrLiteral { str_ref }));
             },
             EntryType::DecIntLiteral => {
                 if key.pack_idx() != 0 { return None; }
-                let digits = self.lookup_str_table_entry(tbe.etc());
-                return Some(Tok::DecIntLiteral(DecIntLiteral::new(digits)));
+                let str_ref = self.make_str_table_ref(tbe.etc());
+                return Some(Tok::DecIntLiteral(DecIntLiteral { str_ref }));
             },
             EntryType::Ident => {
                 if key.pack_idx() != 0 { return None; }
-                let source_text = self.string_interner.lookup_str(tbe.etc());
-                return Some(Tok::Ident(Ident::new(source_text)));
+                let str_table_key = StrListKey::try_from(tbe.etc()).unwrap();
+                let str_ref = StrRef::List(StrListRef::new(
+                    self.string_interner.str_list(), str_table_key));
+                return Some(Tok::Ident(Ident { source_text: str_ref }));
             },
             EntryType::Linebreaks => {
                 if key.pack_idx() != 0 { return None; }
                 let count = tbe.etc();
-                return Some(Tok::Linebreaks(Linebreaks::new(count)));
+                return Some(Tok::Linebreaks(Linebreaks { count }));
             },
             EntryType::Spaces => {
                 if key.pack_idx() != 0 { return None; }
                 let count = tbe.etc();
-                return Some(Tok::Spaces(Spaces::new(count)));
+                return Some(Tok::Spaces(Spaces { count }));
             },
             EntryType::LineComment => {
                 if key.pack_idx() != 0 { return None; }
-                let content = self.lookup_str_table_entry(tbe.etc());
-                return Some(Tok::LineComment(LineComment::new(content)));            
+                let content = self.make_str_table_ref(tbe.etc());
+                return Some(Tok::LineComment(LineComment { str_ref: content }));            
             },
             EntryType::Unexpected => {
                 if key.pack_idx() != 0 { return None; }
@@ -211,18 +214,14 @@ impl<'a> TokBuf<'a> {
     }
 
     fn insert_str_table_entry(&mut self, entry: &[u8]) -> Etc {
-        assert!(!entry.contains(&0));
-        let str_table_key = u32::try_from(self.str_table.len()).unwrap();
-        self.str_table.extend_from_slice(entry);
-        self.str_table.push(0);
-        return str_table_key;
+        let str_table_key = self.str_table.push(entry);
+        let etc = u32::try_from(str_table_key).unwrap();
+        return etc;
     }
 
-    fn lookup_str_table_entry(&self, key: Etc) -> &[u8] {
-        let idx = usize::try_from(key).unwrap();
-        let len = self.str_table[idx..].iter().copied()
-            .take_while(|ch| *ch != 0).count();
-        return &self.str_table[idx..(idx + len)];
+    fn make_str_table_ref<'b>(&'b self, etc: Etc) -> StrRef<'b> {
+        let key = usize::try_from(etc).unwrap();
+        return StrRef::List(StrListRef::new(&self.str_table, key));
     }
 
     /// Returns the 0-based index of the line where the token begins.
@@ -234,13 +233,14 @@ impl<'a> TokBuf<'a> {
 #[cfg(test)]
 mod test_tok_buf {
     use crate::tok::ident::Ident;
-    use crate::util::string_interner::StringInterner;
+    use crate::util::str_interner::StrInterner;
     use crate::tok::tok::{StaticTok, StrLiteral, Tok};
+    use crate::util::str_list::StrRef;
     use super::TokBuf;
 
     #[test]
     fn test_static_pack() {
-        let interner = StringInterner::default();
+        let interner = StrInterner::default();
         let mut tokbuf = TokBuf::new(&interner);
         tokbuf.push(&Tok::Static(StaticTok::If));
         tokbuf.push(&Tok::Static(StaticTok::Let));
@@ -255,24 +255,24 @@ mod test_tok_buf {
 
     #[test]
     fn test_str_literal() {
-        let interner = StringInterner::default();
+        let interner = StrInterner::default();
         let mut tokbuf = TokBuf::new(&interner);
         const SOURCE_TEXT: &'static [u8] = "\"Hello World\"".as_bytes();
-        tokbuf.push(&Tok::StrLiteral(StrLiteral::new(SOURCE_TEXT)));
+        tokbuf.push(&Tok::StrLiteral(StrLiteral { str_ref: StrRef::Slice(SOURCE_TEXT) }));
         let toks: Vec<Tok> = tokbuf.iter().map(|(_, tok)| tok).collect();
         let Tok::StrLiteral(lit) = toks[0] else { panic!(); };
-        assert_eq!(lit.source_text(), SOURCE_TEXT);
+        assert_eq!(lit.str_ref.get(), SOURCE_TEXT);
     }
 
     #[test]
     fn test_ident() {
-        let interner = StringInterner::default();
+        let interner = StrInterner::default();
         let mut tokbuf = TokBuf::new(&interner);
         const SOURCE_TEXT: &'static [u8] = "main".as_bytes();
         tokbuf.push(&Tok::Ident(Ident::new(SOURCE_TEXT)));
         let toks: Vec<Tok> = tokbuf.iter().map(|(_, tok)| tok).collect();
         let Tok::Ident(ident) = toks[0] else { panic!(); };
-        assert_eq!(ident.source_text(), SOURCE_TEXT);
+        assert_eq!(ident.source_text.get(), SOURCE_TEXT);
     }
 }
 
@@ -359,3 +359,24 @@ impl TokBufEntry {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct TokCursor<'a> {
+    pos: Key,
+    tokbuf: &'a TokBuf<'a>
+}
+
+impl<'a> TokCursor<'a> {
+    pub fn new(tokbuf: &'a TokBuf<'a>) -> Self {
+        Self { pos: Key::default(), tokbuf }
+    }
+
+    /// Returns the [`Tok`] at the cursor's position, or None if the cursor is at the
+    /// end of the buffer.
+    pub fn read(&self) -> Option<Tok<'a>> { return self.tokbuf.get(self.pos); }
+
+    /// Returns a [`Key`] that can be used to access the 
+    pub fn at(&self) -> Key { return self.pos; }
+
+
+    // TODO: Advance forward / next    
+}
