@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 use crate::util::prefix_tree::PrefixTree;
 use crate::util::ascii;
 use crate::util::str_interner::StrInterner;
-use crate::tok::tok::{LineComment, DecIntLiteral, Linebreaks, StaticTok, Tok, StrLiteral, Unexpected};
+use crate::tok::tok::{LineComment, DecIntLiteral, StaticTok, Tok, StrLiteral, Unexpected};
 use crate::tok::tokbuf::TokBuf;
 use crate::tok::ident::{Ident, iter_ident_prefix_chs, is_ident_prefix_ch, is_ident_ch, is_ident_str};
 use crate::tok::tok::Spaces;
@@ -129,9 +129,8 @@ fn lex_stok(ctx: &mut LexContext, stok: StaticTok) {
 }
 
 fn lex_linebreak(ctx: &mut LexContext) {
-    let linebreaks = ctx.stream.advance_while(|ch| ch == ascii::LINEBREAK);
-    let count = u32::try_from(linebreaks.len()).unwrap();
-    ctx.tokbuf.push(&Tok::Linebreaks(Linebreaks { count }));
+    assert_eq!(ctx.stream.advance(), ascii::LINEBREAK);
+    ctx.tokbuf.push(&Tok::Linebreak);
 }
 
 fn lex_space(ctx: &mut LexContext) {
@@ -190,7 +189,7 @@ mod test_lex {
         assert_matches!(toks[4], Tok::Static(StaticTok::CloseParen));
         assert_matches!(toks[5], Tok::Spaces(_));
         assert_matches!(toks[6], Tok::Static(StaticTok::OpenCurly));
-        assert_matches!(toks[7], Tok::Linebreaks(_));
+        assert_matches!(toks[7], Tok::Linebreak);
         assert_matches!(toks[8], Tok::Spaces(_));
         assert_matches!(toks[9], Tok::Ident(std_ident));
         assert_eq!(std_ident.source_text.get(), "std".as_bytes());
@@ -201,9 +200,9 @@ mod test_lex {
         assert_matches!(toks[13], Tok::StrLiteral(_));
         assert_matches!(toks[14], Tok::Static(StaticTok::CloseParen));
         assert_matches!(toks[15], Tok::Static(StaticTok::Semicolon));
-        assert_matches!(toks[16], Tok::Linebreaks(_));
+        assert_matches!(toks[16], Tok::Linebreak);
         assert_matches!(toks[17], Tok::Static(StaticTok::CloseCurly));
-        assert_matches!(toks[18], Tok::Linebreaks(_));
+        assert_matches!(toks[18], Tok::Linebreak);
     }
 
     #[test]

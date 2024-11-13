@@ -9,7 +9,7 @@ pub enum Tok<'a> {
     StrLiteral(StrLiteral<'a>),
     DecIntLiteral(DecIntLiteral<'a>),
     Ident(Ident<'a>),   
-    Linebreaks(Linebreaks),
+    Linebreak,
     Spaces(Spaces),
     LineComment(LineComment<'a>),
     Unexpected(Unexpected),
@@ -141,9 +141,6 @@ pub struct DecIntLiteral<'a> {
     /// This slice is guaranteed to have a length of at least one.
     pub str_ref: StrRef<'a>
 }
-
-#[derive(Clone, Copy, Debug)]
-pub struct Linebreaks { pub count: u32 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Spaces { pub count: u32 }

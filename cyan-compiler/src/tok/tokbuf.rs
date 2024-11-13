@@ -9,7 +9,6 @@ use crate::util::bits::Truncate;
 use crate::util::ascii;
 use crate::tok::ident::Ident;
 use crate::tok::tok::{Tok, DecIntLiteral, StaticTok, StrLiteral, LineComment, Spaces, Unexpected};
-use crate::tok::tok::Linebreaks;
 
 #[derive(Clone, Copy, Default)]
 pub struct Key { data: u32 }
@@ -109,13 +108,11 @@ impl<'a> TokBuf<'a> {
         self.buf.push(entry);
     }
 
-    fn push_linebreaks(&mut self, lbs: &Linebreaks) {
-        let entry = TokBufEntry::new(EntryType::Linebreaks, lbs.count);
+    fn push_linebreak(&mut self) {
+        let entry = TokBufEntry::new(EntryType::Linebreak, 0);
         let tok_addr = u32::try_from(self.buf.len()).unwrap();
         self.buf.push(entry);
-        for _ in 0..(lbs.count) {
-            self.lines.push(tok_addr);
-        }
+        self.lines.push(tok_addr);
     }
 
     fn push_spaces(&mut self, spaces: &Spaces) {
@@ -141,7 +138,7 @@ impl<'a> TokBuf<'a> {
             Tok::StrLiteral(lit) => self.push_str_literal(lit),
             Tok::DecIntLiteral(lit) => self.push_dec_int_literal(lit),
             Tok::Ident(ident) => self.push_ident(ident),
-            Tok::Linebreaks(lbs) => self.push_linebreaks(lbs),
+            Tok::Linebreak => self.push_linebreak(),
             Tok::Spaces(spaces) => self.push_spaces(spaces),
             Tok::LineComment(lc) => self.push_line_comment(lc),
             Tok::Unexpected(unexpected) => self.push_unexpected(unexpected),
@@ -191,10 +188,9 @@ impl<'a> TokBuf<'a> {
                     self.string_interner.str_list(), str_table_key));
                 return Some(Tok::Ident(Ident { source_text: str_ref }));
             },
-            EntryType::Linebreaks => {
+            EntryType::Linebreak => {
                 if key.pack_idx() != 0 { return None; }
-                let count = tbe.etc();
-                return Some(Tok::Linebreaks(Linebreaks { count }));
+                return Some(Tok::Linebreak);
             },
             EntryType::Spaces => {
                 if key.pack_idx() != 0 { return None; }
@@ -284,7 +280,7 @@ pub enum EntryType {
     StrLiteral = 2,
     DecIntLiteral = 3,
     Ident = 4,
-    Linebreaks = 5,
+    Linebreak = 5,
     Spaces = 6,
     LineComment = 7,
     Unexpected = 8
@@ -297,7 +293,7 @@ impl EntryType {
             Self::StrLiteral,
             Self::DecIntLiteral,
             Self::Ident,
-            Self::Linebreaks,
+            Self::Linebreak,
             Self::Spaces,
             Self::LineComment,
             Self::Unexpected
