@@ -1,6 +1,6 @@
-//! The token representation is modeled after Google's Carbon Language compiler as described by
-//! Chandler Carruth in his talk "Modernizing Compiler Design for Carbon Toolchain" at CppNow 2023.
-//! See https://www.youtube.com/watch?v=ZI198eFghJk&t=2817s.
+///! The token representation is modeled after Google's Carbon Language compiler as described by
+///! Chandler Carruth in his talk "Modernizing Compiler Design for Carbon Toolchain" at CppNow 2023.
+///! See https://www.youtube.com/watch?v=ZI198eFghJk&t=2817s.
 
 use std::num::{NonZeroU8, NonZeroUsize};
 use crate::util::str_interner::StrInterner;
@@ -62,7 +62,7 @@ impl<'a> TokBuf<'a> {
         };
     }
 
-    fn push_static_tok(&mut self, stok: &StaticTok) {
+    fn push_static_tok(&mut self, stok: StaticTok) {
         if self.buf.last().is_none_or(|last| last.kind() != EntryType::StaticPack) {
             self.buf.push(TokBufEntry::new(EntryType::StaticPack, 0));
         }
@@ -81,7 +81,7 @@ impl<'a> TokBuf<'a> {
         }
     }
 
-    fn push_str_literal(&mut self, lit: &StrLiteral) {
+    fn push_str_literal(&mut self, lit: StrLiteral) {
         let etc = self.insert_str_table_entry(lit.str_ref.get());
         let entry = TokBufEntry::new(EntryType::StrLiteral, etc);
         let tok_addr = u32::try_from(self.buf.len()).unwrap();
@@ -93,13 +93,13 @@ impl<'a> TokBuf<'a> {
         }
     }
 
-    fn push_dec_int_literal(&mut self, lit: &DecIntLiteral) {
+    fn push_dec_int_literal(&mut self, lit: DecIntLiteral) {
         let etc = self.insert_str_table_entry(lit.str_ref.get());
         let entry = TokBufEntry::new(EntryType::DecIntLiteral, etc);
         self.buf.push(entry);
     }
 
-    fn push_ident(&mut self, ident: &Ident) {
+    fn push_ident(&mut self, ident: Ident) {
         let intern_key = self.string_interner.intern(ident.source_text.get());
         let etc = u32::try_from(intern_key.get()).unwrap();
         let entry = TokBufEntry::new(EntryType::Ident, etc);
@@ -113,24 +113,24 @@ impl<'a> TokBuf<'a> {
         self.lines.push(tok_addr);
     }
 
-    fn push_align(&mut self, align: &Align) {
+    fn push_align(&mut self, align: Align) {
         let entry = TokBufEntry::new(EntryType::Align, align.count);
         self.buf.push(entry);
     }
 
-    fn push_line_comment(&mut self, lc: &LineComment) {
+    fn push_line_comment(&mut self, lc: LineComment) {
         let etc = self.insert_str_table_entry(lc.str_ref.get());
         let entry = TokBufEntry::new(EntryType::LineComment, etc);
         self.buf.push(entry);
     }
 
-    fn push_unexpected(&mut self, unexpected: &Unexpected) {
+    fn push_unexpected(&mut self, unexpected: Unexpected) {
         let etc = u32::from(unexpected.ch);
         let entry = TokBufEntry::new(EntryType::Unexpected, etc);
         self.buf.push(entry);
     }
     
-    pub fn push(&mut self, tok: &Tok) {
+    pub fn push(&mut self, tok: Tok) {
         match tok {
             Tok::Static(stok) => self.push_static_tok(stok),
             Tok::StrLiteral(lit) => self.push_str_literal(lit),
@@ -224,10 +224,10 @@ mod test_tok_buf {
     fn test_static_pack() {
         let interner = StrInterner::default();
         let mut tokbuf = TokBuf::new(&interner);
-        tokbuf.push(&Tok::Static(StaticTok::If));
-        tokbuf.push(&Tok::Static(StaticTok::Let));
-        tokbuf.push(&Tok::Static(StaticTok::Ampersand));
-        tokbuf.push(&Tok::Static(StaticTok::ColonColon));
+        tokbuf.push(Tok::Static(StaticTok::If));
+        tokbuf.push(Tok::Static(StaticTok::Let));
+        tokbuf.push(Tok::Static(StaticTok::Ampersand));
+        tokbuf.push(Tok::Static(StaticTok::ColonColon));
         let toks: Vec<Tok> = tokbuf.iter().collect();
         assert!(matches!(toks[0], Tok::Static(StaticTok::If)));
         assert!(matches!(toks[1], Tok::Static(StaticTok::Let)));
@@ -240,7 +240,7 @@ mod test_tok_buf {
         let interner = StrInterner::default();
         let mut tokbuf = TokBuf::new(&interner);
         const SOURCE_TEXT: &'static [u8] = "\"Hello World\"".as_bytes();
-        tokbuf.push(&Tok::StrLiteral(StrLiteral { str_ref: StrRef::Slice(SOURCE_TEXT) }));
+        tokbuf.push(Tok::StrLiteral(StrLiteral { str_ref: StrRef::Slice(SOURCE_TEXT) }));
         let toks: Vec<Tok> = tokbuf.iter().collect();
         let Tok::StrLiteral(lit) = toks[0] else { panic!(); };
         assert_eq!(lit.str_ref.get(), SOURCE_TEXT);
@@ -251,7 +251,7 @@ mod test_tok_buf {
         let interner = StrInterner::default();
         let mut tokbuf = TokBuf::new(&interner);
         const SOURCE_TEXT: &'static [u8] = "main".as_bytes();
-        tokbuf.push(&Tok::Ident(Ident::new(SOURCE_TEXT)));
+        tokbuf.push(Tok::Ident(Ident::new(SOURCE_TEXT)));
         let toks: Vec<Tok> = tokbuf.iter().collect();
         let Tok::Ident(ident) = toks[0] else { panic!(); };
         assert_eq!(ident.source_text.get(), SOURCE_TEXT);

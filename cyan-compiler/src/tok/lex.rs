@@ -100,14 +100,14 @@ fn lex_double_quote(ctx: &mut LexContext) {
     let end = ctx.stream.pos;
     let source_text = &ctx.stream.bytes[begin..end];
     let str_ref = StrRef::Slice(source_text);
-    ctx.tokbuf.push(&Tok::StrLiteral(StrLiteral { str_ref }));
+    ctx.tokbuf.push(Tok::StrLiteral(StrLiteral { str_ref }));
     
 }
 
 fn lex_digit(ctx: &mut LexContext) {
     let digits = ctx.stream.advance_while(|ch| ascii::is_numeric_ch(ch));
     let str_ref = StrRef::Slice(digits);
-    ctx.tokbuf.push(&Tok::DecIntLiteral(DecIntLiteral { str_ref }));
+    ctx.tokbuf.push(Tok::DecIntLiteral(DecIntLiteral { str_ref }));
 }
 
 fn lex_stok(ctx: &mut LexContext, stok: StaticTok) {
@@ -125,12 +125,12 @@ fn lex_stok(ctx: &mut LexContext, stok: StaticTok) {
     // If the static token we matched is not consecutive with a valid identifier character,
     // then it is indeed a static token and not an identifier.
     ctx.stream.advance_n(stok.source_text().len());
-    ctx.tokbuf.push(&Tok::Static(stok));
+    ctx.tokbuf.push(Tok::Static(stok));
 }
 
 fn lex_linebreak(ctx: &mut LexContext) {
     assert_eq!(ctx.stream.advance(), ascii::LINEBREAK);
-    ctx.tokbuf.push(&Tok::Linebreak);
+    ctx.tokbuf.push(Tok::Linebreak);
 }
 
 fn lex_space(ctx: &mut LexContext) {
@@ -139,9 +139,9 @@ fn lex_space(ctx: &mut LexContext) {
 
     assert!(count > 0);
     if count > 1 {
-        ctx.tokbuf.push(&Tok::Align(Align { count }));
+        ctx.tokbuf.push(Tok::Align(Align { count }));
     } else {
-        ctx.tokbuf.push(&Tok::Static(StaticTok::Space));
+        ctx.tokbuf.push(Tok::Static(StaticTok::Space));
     }
   }
 
@@ -149,7 +149,7 @@ fn lex_double_forward_slash(ctx: &mut LexContext) {
     ctx.stream.advance_n(2);
     let content = ctx.stream.advance_while(|ch| ch != ascii::LINEBREAK);
     let str_ref = StrRef::Slice(content);
-    ctx.tokbuf.push(&Tok::LineComment(LineComment { str_ref }));
+    ctx.tokbuf.push(Tok::LineComment(LineComment { str_ref }));
 }
 
 fn lex_ident_prefix_ch(ctx: &mut LexContext, assume_n: usize) {
@@ -158,12 +158,12 @@ fn lex_ident_prefix_ch(ctx: &mut LexContext, assume_n: usize) {
     ctx.stream.advance_n(assume_n);
     ctx.stream.advance_while(|ch| is_ident_ch(ch));
     let source_text = &ctx.stream.bytes[begin..ctx.stream.pos];
-    ctx.tokbuf.push(&Tok::Ident(Ident::new(source_text)));
+    ctx.tokbuf.push(Tok::Ident(Ident::new(source_text)));
 }
 
 fn lex_other(ctx: &mut LexContext) {
     let ch = ctx.stream.advance();
-    ctx.tokbuf.push(&Tok::Unexpected(Unexpected { ch }));
+    ctx.tokbuf.push(Tok::Unexpected(Unexpected { ch }));
 }
 
 #[cfg(test)]
