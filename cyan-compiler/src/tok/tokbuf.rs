@@ -173,10 +173,9 @@ impl<'a> TokBuf<'a> {
                 return Some(Tok::DecIntLiteral(DecIntLiteral { str_ref }));
             },
             EntryType::Ident => {
-                let str_table_key = NonZeroUsize::new(
-                    usize::try_from(tbe.etc()).unwrap()).unwrap();
+                let str_list_key = StrListKey::try_from(tbe.etc()).unwrap();
                 let str_ref = StrRef::List(StrListRef::new(
-                    self.string_interner.str_list(), str_table_key));
+                    self.string_interner.str_list(), str_list_key));
                 return Some(Tok::Ident(Ident { source_text: str_ref }));
             },
             EntryType::Linebreak => return Some(Tok::Linebreak),
@@ -202,7 +201,7 @@ impl<'a> TokBuf<'a> {
     }
 
     fn make_str_table_ref<'b>(&'b self, etc: Etc) -> StrRef<'b> {
-        let key = NonZeroUsize::new(usize::try_from(etc).unwrap()).unwrap();
+        let key = StrListKey::try_from(etc).unwrap();
         return StrRef::List(StrListRef::new(&self.str_table, key));
     }
 
