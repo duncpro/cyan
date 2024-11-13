@@ -25,13 +25,13 @@ impl StrList {
         return key;
     }
 
-    pub fn get(&self, key: StrListKey) -> Option<&[u8]> {
+    pub fn get(&self, key: StrListKey) -> &[u8] {
         let arr = self.state.read().unwrap();
         let content_begin_idx = key + size_of::<usize>();
         let mut header = [0u8; size_of::<usize>()];
-        header.copy_from_slice(arr.get(key..content_begin_idx)?);
+        header.copy_from_slice(&arr[key..content_begin_idx]);
         let len = usize::from_ne_bytes(header);
-        let s = arr.get(content_begin_idx..(content_begin_idx + len));
+        let s = &arr[content_begin_idx..(content_begin_idx + len)];
         return unsafe { std::mem::transmute(s) };
     }
 }
@@ -50,9 +50,7 @@ impl<'a> StrListRef<'a> {
 }
 
 impl<'a> StrListRef<'a> {
-    pub fn get(&self) -> &'a [u8] {
-        return self.table.get(self.key).unwrap();
-    }
+    pub fn get(&self) -> &'a [u8] { return self.table.get(self.key); }
 }
 
 impl<'a> std::fmt::Debug for StrListRef<'a> {
