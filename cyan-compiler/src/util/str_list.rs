@@ -1,4 +1,4 @@
-use std::sync::RwLock;
+use std::{num::NonZeroUsize, sync::RwLock};
 
 /// A list of strings of heterogenous lengths arranged contiguously in memory.
 ///
@@ -13,23 +13,23 @@ use std::sync::RwLock;
 #[derive(Default, Debug)]
 pub struct StrList { state: RwLock<Vec<u8>> }
 
-pub type StrListKey = usize;
+pub type StrListKey = NonZeroUsize;
 
 impl StrList {
     pub fn push(&self, str: &[u8]) -> StrListKey {
         let mut arr = self.state.write().unwrap();
-        let key = arr.len();
+        let key = NonZeroUsize::new(arr.len() + 1).unwrap();
         arr.extend_from_slice(&str.len().to_ne_bytes());
         arr.extend_from_slice(str);
-        arr.push(0);
         return key;
     }
 
     pub fn get(&self, key: StrListKey) -> &[u8] {
+        let idx = key.get() - 1;
         let arr = self.state.read().unwrap();
-        let content_begin_idx = key + size_of::<usize>();
+        let content_begin_idx = idx + size_of::<usize>();
         let mut header = [0u8; size_of::<usize>()];
-        header.copy_from_slice(&arr[key..content_begin_idx]);
+        header.copy_from_slice(&arr[idx..content_begin_idx]);
         let len = usize::from_ne_bytes(header);
         let s = &arr[content_begin_idx..(content_begin_idx + len)];
         return unsafe { std::mem::transmute(s) };

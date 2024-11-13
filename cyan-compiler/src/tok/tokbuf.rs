@@ -2,7 +2,7 @@
 //! Chandler Carruth in his talk "Modernizing Compiler Design for Carbon Toolchain" at CppNow 2023.
 //! See https://www.youtube.com/watch?v=ZI198eFghJk&t=2817s.
 
-use std::num::NonZeroU8;
+use std::num::{NonZeroU8, NonZeroUsize};
 use crate::util::str_interner::StrInterner;
 use crate::util::str_list::{StrRef, StrList, StrListKey, StrListRef};
 use crate::util::bits::Truncate;
@@ -104,7 +104,7 @@ impl<'a> TokBuf<'a> {
 
     fn push_ident(&mut self, ident: &Ident) {
         let intern_key = self.string_interner.intern(ident.source_text.get());
-        let etc = u32::try_from(intern_key).unwrap();
+        let etc = u32::try_from(intern_key.get()).unwrap();
         let entry = TokBufEntry::new(EntryType::Ident, etc);
         self.buf.push(entry);
     }
@@ -185,7 +185,8 @@ impl<'a> TokBuf<'a> {
             },
             EntryType::Ident => {
                 if key.pack_idx() != 0 { return None; }
-                let str_table_key = StrListKey::try_from(tbe.etc()).unwrap();
+                let str_table_key = NonZeroUsize::new(
+                    usize::try_from(tbe.etc()).unwrap()).unwrap();
                 let str_ref = StrRef::List(StrListRef::new(
                     self.string_interner.str_list(), str_table_key));
                 return Some(Tok::Ident(Ident { source_text: str_ref }));
@@ -215,12 +216,12 @@ impl<'a> TokBuf<'a> {
 
     fn insert_str_table_entry(&mut self, entry: &[u8]) -> Etc {
         let str_table_key = self.str_table.push(entry);
-        let etc = u32::try_from(str_table_key).unwrap();
+        let etc = u32::try_from(str_table_key.get()).unwrap();
         return etc;
     }
 
     fn make_str_table_ref<'b>(&'b self, etc: Etc) -> StrRef<'b> {
-        let key = usize::try_from(etc).unwrap();
+        let key = NonZeroUsize::new(usize::try_from(etc).unwrap()).unwrap();
         return StrRef::List(StrListRef::new(&self.str_table, key));
     }
 
