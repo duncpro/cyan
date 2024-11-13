@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "cyan-compiler"
+name = "libcyan"
 version = "0.1.0"
