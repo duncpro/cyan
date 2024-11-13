@@ -10,7 +10,7 @@ pub enum Tok<'a> {
     DecIntLiteral(DecIntLiteral<'a>),
     Ident(Ident<'a>),   
     Linebreak,
-    Spaces(Spaces),
+    Align(Align),
     LineComment(LineComment<'a>),
     Unexpected(Unexpected),
 }
@@ -46,7 +46,26 @@ pub enum StaticTok {
     Percent = 26,
     Exclamation = 27,
     Ampersand = 28,
-    Semicolon = 29
+    Semicolon = 29,
+    /// Represents a *single* space character in the source text.
+    ///
+    /// Note that most coding style guides recommend indenting of nested blocks with more than one
+    /// space. Therefore, it is extremely common that long sequences of consecutive spaces appear 
+    /// in the source text.
+    ///
+    /// However such a sequence is **not** represented by `Tok::StaticTok(StaticTok::Space)`.
+    /// Instead, it is represented by `Tok::Align(Align)`.
+    ///
+    /// ```txt
+    ///   std::sum(a, b);
+    ///              -  <- `Tok::StaticTok(StaticTok::Space)`
+    ///
+    ///    if x condition_is_true {
+    ///        std::println("Hello World");
+    ///    ____  <- `Tok::Align(Align)`
+    ///    }
+    /// ```
+    Space = 30 
 }
 
 impl StaticTok {
@@ -80,7 +99,8 @@ impl StaticTok {
             Self::Percent,
             Self::Exclamation,
             Self::Ampersand,
-            Self::Semicolon
+            Self::Semicolon,
+            Self::Space
         ];
     }
     
@@ -124,6 +144,7 @@ impl StaticTok {
             StaticTok::Exclamation => "!",
             StaticTok::Ampersand => "&",
             StaticTok::Semicolon => ";",
+            StaticTok::Space => " ",
         }.as_bytes();
     }
 }
@@ -143,7 +164,7 @@ pub struct DecIntLiteral<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Spaces { pub count: u32 }
+pub struct Align { pub count: u32 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct LineComment<'a> {

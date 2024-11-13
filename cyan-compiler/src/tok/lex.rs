@@ -5,7 +5,7 @@ use crate::util::str_interner::StrInterner;
 use crate::tok::tok::{LineComment, DecIntLiteral, StaticTok, Tok, StrLiteral, Unexpected};
 use crate::tok::tokbuf::TokBuf;
 use crate::tok::ident::{Ident, iter_ident_prefix_chs, is_ident_prefix_ch, is_ident_ch, is_ident_str};
-use crate::tok::tok::Spaces;
+use crate::tok::tok::Align;
 use crate::util::str_list::StrRef;
 
 struct ByteStream<'a> { bytes: &'a [u8], pos: usize }
@@ -136,8 +136,14 @@ fn lex_linebreak(ctx: &mut LexContext) {
 fn lex_space(ctx: &mut LexContext) {
     let spaces = ctx.stream.advance_while(|ch| ch == ascii::SPACE);
     let count = u32::try_from(spaces.len()).unwrap();
-    ctx.tokbuf.push(&Tok::Spaces(Spaces { count }));
-}
+
+    assert!(count > 0);
+    if count > 1 {
+        ctx.tokbuf.push(&Tok::Align(Align { count }));
+    } else {
+        ctx.tokbuf.push(&Tok::Static(StaticTok::Space));
+    }
+  }
 
 fn lex_double_forward_slash(ctx: &mut LexContext) {
     ctx.stream.advance_n(2);
@@ -179,18 +185,18 @@ mod test_lex {
         let string_interner = StrInterner::default();
         let mut tokbuf = TokBuf::new(&string_interner);
         lex(source_text, &mut tokbuf);
-        let toks: Vec<Tok> = tokbuf.iter().map(|(_, tok)| tok).collect();
+        let toks: Vec<Tok> = tokbuf.iter().collect();
         
         assert_matches!(toks[0], Tok::Static(StaticTok::Proc));
-        assert_matches!(toks[1], Tok::Spaces(_));
+        assert_matches!(toks[1], Tok::Static(StaticTok::Space));
         assert_matches!(toks[2], Tok::Ident(main_ident));
         assert_eq!(main_ident.source_text.get(), "main".as_bytes());
         assert_matches!(toks[3], Tok::Static(StaticTok::OpenParen));
         assert_matches!(toks[4], Tok::Static(StaticTok::CloseParen));
-        assert_matches!(toks[5], Tok::Spaces(_));
+        assert_matches!(toks[5], Tok::Static(StaticTok::Space));
         assert_matches!(toks[6], Tok::Static(StaticTok::OpenCurly));
         assert_matches!(toks[7], Tok::Linebreak);
-        assert_matches!(toks[8], Tok::Spaces(_));
+        assert_matches!(toks[8], Tok::Align(_));
         assert_matches!(toks[9], Tok::Ident(std_ident));
         assert_eq!(std_ident.source_text.get(), "std".as_bytes());
         assert_matches!(toks[10], Tok::Static(StaticTok::ColonColon));
@@ -213,7 +219,7 @@ mod test_lex {
         let string_interner = StrInterner::default();
         let mut tokbuf = TokBuf::new(&string_interner);
         lex(source_text, &mut tokbuf);
-        let toks: Vec<Tok> = tokbuf.iter().map(|(_, tok)| tok).collect();
+        let toks: Vec<Tok> = tokbuf.iter().collect();
 
         assert_eq!(toks.len(), 1);
         assert_matches!(toks[0], Tok::Ident(ident));

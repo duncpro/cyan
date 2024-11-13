@@ -8,18 +8,16 @@ use crate::util::str_list::{StrRef, StrList, StrListKey, StrListRef};
 use crate::util::bits::Truncate;
 use crate::util::ascii;
 use crate::tok::ident::Ident;
-use crate::tok::tok::{Tok, DecIntLiteral, StaticTok, StrLiteral, LineComment, Spaces, Unexpected};
+use crate::tok::tok::{Tok, DecIntLiteral, StaticTok, StrLiteral, LineComment, Align, Unexpected};
 
 #[derive(Clone, Copy, Default)]
 pub struct Key { data: u32 }
 
 impl Key {
     const ADDR_MAX: u32 = u32::MAX >> 8;
-    const PACK_IDX_MAX: u8 = 2;
     fn addr(self) -> u32 { return self.data >> 8; }
     fn pack_idx(self) -> u8 { return self.data.truncate(); }
     fn new(addr: u32, pack_idx: u8) -> Self {
-        assert!(pack_idx <= Self::PACK_IDX_MAX);
         assert!(addr <= Self::ADDR_MAX);
         let mut data: u32 = 0;
         data |= u32::from(pack_idx);
@@ -115,8 +113,8 @@ impl<'a> TokBuf<'a> {
         self.lines.push(tok_addr);
     }
 
-    fn push_spaces(&mut self, spaces: &Spaces) {
-        let entry = TokBufEntry::new(EntryType::Spaces, spaces.count);
+    fn push_align(&mut self, align: &Align) {
+        let entry = TokBufEntry::new(EntryType::Align, align.count);
         self.buf.push(entry);
     }
 
@@ -139,27 +137,23 @@ impl<'a> TokBuf<'a> {
             Tok::DecIntLiteral(lit) => self.push_dec_int_literal(lit),
             Tok::Ident(ident) => self.push_ident(ident),
             Tok::Linebreak => self.push_linebreak(),
-            Tok::Spaces(spaces) => self.push_spaces(spaces),
+            Tok::Align(indent) => self.push_align(indent),
             Tok::LineComment(lc) => self.push_line_comment(lc),
             Tok::Unexpected(unexpected) => self.push_unexpected(unexpected),
         }
     }
 
-    pub fn iter(&'a self) -> impl Iterator<Item = (Key, Tok<'a>)> + 'a {
-        let len = u32::try_from(self.buf.len()).unwrap();
-        std::iter::zip((0..len), self.buf.iter())
-            .flat_map(|(addr, entry)| {
-                let is_pack = matches!(entry.kind(), EntryType::StaticPack);
-                let leading_zeros = u8::try_from(entry.etc().leading_zeros()).unwrap();
-                let pack_len = (3u8.wrapping_sub(leading_zeros / 8)) * (is_pack as u8) + 1;
-                return (0..pack_len).map(move |pack_idx| Key::new(addr, pack_idx))
-            })
-            .map(|key| (key, self.get(key).unwrap()))
+    pub fn iter(&'a self) -> impl Iterator<Item = Tok<'a>> + 'a {
+        return TokCursor::new(&self);
     }
 
     pub fn get(&'a self, key: Key) -> Option<Tok<'a>> {
         let idx = usize::try_from(key.addr()).ok()?;
         let tbe = self.buf.get(idx)?;
+
+        if tbe.kind() != EntryType::StaticPack && key.pack_idx() != 0 { 
+            return None; 
+        }
         
         match tbe.kind() {
             EntryType::StaticPack => {
@@ -171,39 +165,30 @@ impl<'a> TokBuf<'a> {
                 return Some(Tok::Static(stok));
             },
             EntryType::StrLiteral => {
-                if key.pack_idx() != 0 { return None; }
                 let str_ref = self.make_str_table_ref(tbe.etc());
                 return Some(Tok::StrLiteral(StrLiteral { str_ref }));
             },
             EntryType::DecIntLiteral => {
-                if key.pack_idx() != 0 { return None; }
                 let str_ref = self.make_str_table_ref(tbe.etc());
                 return Some(Tok::DecIntLiteral(DecIntLiteral { str_ref }));
             },
             EntryType::Ident => {
-                if key.pack_idx() != 0 { return None; }
                 let str_table_key = NonZeroUsize::new(
                     usize::try_from(tbe.etc()).unwrap()).unwrap();
                 let str_ref = StrRef::List(StrListRef::new(
                     self.string_interner.str_list(), str_table_key));
                 return Some(Tok::Ident(Ident { source_text: str_ref }));
             },
-            EntryType::Linebreak => {
-                if key.pack_idx() != 0 { return None; }
-                return Some(Tok::Linebreak);
-            },
-            EntryType::Spaces => {
-                if key.pack_idx() != 0 { return None; }
+            EntryType::Linebreak => return Some(Tok::Linebreak),
+            EntryType::Align => {
                 let count = tbe.etc();
-                return Some(Tok::Spaces(Spaces { count }));
+                return Some(Tok::Align(Align { count }));
             },
             EntryType::LineComment => {
-                if key.pack_idx() != 0 { return None; }
                 let content = self.make_str_table_ref(tbe.etc());
                 return Some(Tok::LineComment(LineComment { str_ref: content }));            
             },
             EntryType::Unexpected => {
-                if key.pack_idx() != 0 { return None; }
                 let ch: u8 = tbe.etc().truncate();
                 return Some(Tok::Unexpected(Unexpected { ch }));
             }
@@ -243,7 +228,7 @@ mod test_tok_buf {
         tokbuf.push(&Tok::Static(StaticTok::Let));
         tokbuf.push(&Tok::Static(StaticTok::Ampersand));
         tokbuf.push(&Tok::Static(StaticTok::ColonColon));
-        let toks: Vec<Tok> = tokbuf.iter().map(|(_, tok)| tok).collect();
+        let toks: Vec<Tok> = tokbuf.iter().collect();
         assert!(matches!(toks[0], Tok::Static(StaticTok::If)));
         assert!(matches!(toks[1], Tok::Static(StaticTok::Let)));
         assert!(matches!(toks[2], Tok::Static(StaticTok::Ampersand)));
@@ -256,7 +241,7 @@ mod test_tok_buf {
         let mut tokbuf = TokBuf::new(&interner);
         const SOURCE_TEXT: &'static [u8] = "\"Hello World\"".as_bytes();
         tokbuf.push(&Tok::StrLiteral(StrLiteral { str_ref: StrRef::Slice(SOURCE_TEXT) }));
-        let toks: Vec<Tok> = tokbuf.iter().map(|(_, tok)| tok).collect();
+        let toks: Vec<Tok> = tokbuf.iter().collect();
         let Tok::StrLiteral(lit) = toks[0] else { panic!(); };
         assert_eq!(lit.str_ref.get(), SOURCE_TEXT);
     }
@@ -267,7 +252,7 @@ mod test_tok_buf {
         let mut tokbuf = TokBuf::new(&interner);
         const SOURCE_TEXT: &'static [u8] = "main".as_bytes();
         tokbuf.push(&Tok::Ident(Ident::new(SOURCE_TEXT)));
-        let toks: Vec<Tok> = tokbuf.iter().map(|(_, tok)| tok).collect();
+        let toks: Vec<Tok> = tokbuf.iter().collect();
         let Tok::Ident(ident) = toks[0] else { panic!(); };
         assert_eq!(ident.source_text.get(), SOURCE_TEXT);
     }
@@ -281,7 +266,7 @@ pub enum EntryType {
     DecIntLiteral = 3,
     Ident = 4,
     Linebreak = 5,
-    Spaces = 6,
+    Align = 6,
     LineComment = 7,
     Unexpected = 8
 }
@@ -294,7 +279,7 @@ impl EntryType {
             Self::DecIntLiteral,
             Self::Ident,
             Self::Linebreak,
-            Self::Spaces,
+            Self::Align,
             Self::LineComment,
             Self::Unexpected
         ];
@@ -371,9 +356,33 @@ impl<'a> TokCursor<'a> {
     /// end of the buffer.
     pub fn read(&self) -> Option<Tok<'a>> { return self.tokbuf.get(self.pos); }
 
-    /// Returns a [`Key`] that can be used to access the 
+    /// Returns a [`Key`] of the next token in the buffer. 
+    /// Or, if no tokens remain, the key points to a nonexistent token immediately past
+    /// the last real token in the buffer.
     pub fn at(&self) -> Key { return self.pos; }
 
+    /// Advances the cursor past the next token in the buffer. 
+    /// If no tokens remain, this is a no-op.
+    pub fn forward(&mut self)  {
+        if self.read().is_none() { return; }
 
-    // TODO: Advance forward / next    
+        let next_pack_key = Key::new(self.pos.addr(), self.pos.pack_idx() + 1);
+        if self.tokbuf.get(next_pack_key).is_some() {
+            self.pos = next_pack_key;
+            return;
+        }
+
+        let next_addr_key = Key::new(self.pos.addr() + 1, 0);
+        self.pos = next_addr_key;
+    }  
+}
+
+impl<'a> Iterator for TokCursor<'a> {
+    type Item = Tok<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let elapsed = self.read();
+        self.forward();
+        return elapsed;
+    }
 }
