@@ -125,4 +125,5 @@ pub mod delims {
     make_delim_class!(CloseParen);
     make_delim_class!(Proc);
     make_delim_class!(Comma);
+    make_delim_class!(Colon);
 }

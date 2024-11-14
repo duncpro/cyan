@@ -1,11 +1,11 @@
 ///! This module defines the AST for the Cyan language.
 ///!
-///! When implementing a new AST node, the following must be true...
+///! When implementing a new AST `Node`, the following must be true...
 ///! - The type **must** have `align_of` `AST_ALIGN`!
 ///! - A test must verify the new type has `align_of` `AST_ALIGN`!
 ///! - The type **must** be included in `MAX_NODE_SIZE` in `calc_ast_size_upperbound`!
 
-use crate::tok::class::{BinaryOperator, Ident, TokRef};
+use crate::tok::class::{delims, BinaryOperator, Ident, Literal, TokRef};
 use crate::util::bump_allocator;
 use crate::util::misc::max_of_usizes;
 
@@ -19,20 +19,21 @@ pub type AstRef<T> = bump_allocator::Handle<T>;
 /// to syntactic analysis and AST construction. 
 pub fn calc_ast_size_upperbound(tok_count: usize) -> usize {
     const MAX_NODE_SIZE: usize = max_of_usizes([
-        size_of::<Expr>()
+        size_of::<ExprNode>(),
+        size_of::<ProcDeclarationNode>(),
+        size_of::<ParameterNode>(),
+        size_of::<BlockStatementNode>(),
     ]);
     return tok_count * MAX_NODE_SIZE;
 }
 
 // -- Expressions --------------------------------------------------------------------------------
 
-/// All expressions in the AST are represented by this type, [`Expr`].
-/// Naked expressions such as `IdentExpr`, `InfixExpr`, and all others are **never** 
-/// placed directly into the AST. They are **always** wrapped in an [`Expr`].
 #[repr(u8)]
-pub enum Expr {
+pub enum ExprNode {
     Ident(IdentExpr),
-    Infix(InfixExpr)
+    Infix(InfixExpr),
+    Literal(LiteralExpr)
 }
 
 pub struct IdentExpr {
@@ -40,10 +41,63 @@ pub struct IdentExpr {
 }
 
 pub struct InfixExpr {
-    left_operand: AstRef<Expr>,
+    left_operand: AstRef<ExprNode>,
     operator: TokRef<BinaryOperator>,
-    right_operand: AstRef<Expr>
+    right_operand: AstRef<ExprNode>
 }
+
+pub struct LiteralExpr {
+    tok: TokRef<Literal>
+}
+
+// -- Types -------------------------------------------------------------------------------------
+
+#[repr(u8)]
+pub enum Type {
+    NamedType(NamedType)
+}
+
+pub struct NamedType { name: TokRef<Ident> }
+
+// -- Procedure Declaration ----------------------------------------------------------------------
+
+pub struct ProcDeclarationNode {
+    proc_keyword: TokRef<delims::Proc>,
+    proc_name: TokRef<Ident>,
+    return_type: Option<Type>,
+    parameters: Parameters,
+    body: Block
+}
+
+pub struct Parameters {    
+    open_paren: TokRef<delims::OpenParen>,
+    close_paren: TokRef<delims::CloseParen>,
+    first: Option<AstRef<ParameterNode>>
+}
+
+pub struct ParameterNode {
+    ident: TokRef<Ident>,
+    colon: TokRef<delims::Colon>,
+    ty: Type,
+    next: Option<AstRef<ParameterNode>>,
+    comma: Option<TokRef<delims::Comma>>
+}
+
+// -- Procedure Invocation -----------------------------------------------------------------------
+
+
+// -- Statements ---------------------------------------------------------------------------------
+
+pub struct Block {
+    open_curly: TokRef<delims::OpenCurly>,
+    close_curly: TokRef<delims::CloseCurly>,
+    first_statement: Option<AstRef<BlockStatementNode>>,
+}
+
+pub struct BlockStatementNode {
+    next: Option<AstRef<BlockStatementNode>>
+}
+
 
 // -- Tests --------------------------------------------------------------------------------------
 
@@ -52,7 +106,10 @@ pub mod ast_tests {
     use super::*;
     
     #[test]
-    fn very_align_of_4() {
-        assert_eq!(4, align_of::<Expr>());
+    fn very_align() {
+        assert_eq!(AST_ALIGN, align_of::<ExprNode>());
+        assert_eq!(AST_ALIGN, align_of::<ProcDeclarationNode>());
+        assert_eq!(AST_ALIGN, align_of::<ParameterNode>());
+        assert_eq!(AST_ALIGN, align_of::<BlockStatementNode>());
     }
 }
