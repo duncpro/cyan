@@ -2,7 +2,7 @@
 ///! Chandler Carruth in his talk "Modernizing Compiler Design for Carbon Toolchain" at CppNow 2023.
 ///! See https://www.youtube.com/watch?v=ZI198eFghJk&t=2817s.
 
-use std::num::{NonZeroU8, NonZeroUsize};
+use std::num::{NonZeroU32, NonZeroU8};
 use crate::util::str_interner::StrInterner;
 use crate::util::str_list::{StrRef, StrList, StrListKey, StrListRef};
 use crate::util::bits::Truncate;
@@ -10,19 +10,19 @@ use crate::util::ascii;
 use crate::tok::ident::Ident;
 use crate::tok::tok::{Tok, DecIntLiteral, StaticTok, StrLiteral, LineComment, Align, Unexpected};
 
-#[derive(Clone, Copy, Default)]
-pub struct Key { data: u32 }
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Key { data: NonZeroU32 }
 
 impl Key {
-    const ADDR_MAX: u32 = u32::MAX >> 8;
-    fn addr(self) -> u32 { return self.data >> 8; }
-    fn pack_idx(self) -> u8 { return self.data.truncate(); }
+    fn addr(self) -> u32 { return (self.data.get() - 1) >> 8; }
+    fn pack_idx(self) -> u8 { return (self.data.get() - 1).truncate(); }
     fn new(addr: u32, pack_idx: u8) -> Self {
-        assert!(addr <= Self::ADDR_MAX);
         let mut data: u32 = 0;
         data |= u32::from(pack_idx);
         data |= (addr << 8);
-        return Self { data };
+        data += 1; // null pointer optimization
+        return Self { data: NonZeroU32::new(data).unwrap() };
     }
 }
 
@@ -348,7 +348,7 @@ pub struct TokCursor<'a> {
 
 impl<'a> TokCursor<'a> {
     pub fn new(tokbuf: &'a TokBuf<'a>) -> Self {
-        Self { pos: Key::default(), tokbuf }
+        Self { pos: Key::new(0, 0), tokbuf }
     }
 
     /// Returns the [`Tok`] at the cursor's position, or None if the cursor is at the
