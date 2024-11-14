@@ -355,7 +355,7 @@ impl<'a> TokCursor<'a> {
     /// end of the buffer.
     pub fn read(&self) -> Option<Tok<'a>> { return self.tokbuf.get(self.pos); }
 
-    /// Returns a [`Key`] of the next token in the buffer. 
+    /// Returns the [`Key`] of the next token in the buffer. 
     /// Or, if no tokens remain, the key points to a nonexistent token immediately past
     /// the last real token in the buffer.
     pub fn at(&self) -> Key { return self.pos; }

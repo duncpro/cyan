@@ -51,10 +51,8 @@ pub enum StaticTok {
     ///
     /// Note that most coding style guides recommend indenting of nested blocks with more than one
     /// space. Therefore, it is extremely common that long sequences of consecutive spaces appear 
-    /// in the source text.
-    ///
-    /// However such a sequence is **not** represented by `Tok::StaticTok(StaticTok::Space)`.
-    /// Instead, it is represented by `Tok::Align(Align)`.
+    /// in the source text. However such a sequence is **not** represented by 
+    /// `Tok::StaticTok(StaticTok::Space)`. Instead, it is represented by `Tok::Align(Align)`.
     ///
     /// ```txt
     ///   std::sum(a, b);
@@ -65,7 +63,8 @@ pub enum StaticTok {
     ///    ____  <- `Tok::Align(Align)`
     ///    }
     /// ```
-    Space = 30 
+    Space = 30,
+    Comma = 31
 }
 
 impl StaticTok {
@@ -100,7 +99,8 @@ impl StaticTok {
             Self::Exclamation,
             Self::Ampersand,
             Self::Semicolon,
-            Self::Space
+            Self::Space,
+            Self::Comma
         ];
     }
     
@@ -145,6 +145,7 @@ impl StaticTok {
             StaticTok::Ampersand => "&",
             StaticTok::Semicolon => ";",
             StaticTok::Space => " ",
+            StaticTok::Comma => ",",
         }.as_bytes();
     }
 }
