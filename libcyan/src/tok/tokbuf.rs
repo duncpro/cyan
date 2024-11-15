@@ -54,14 +54,26 @@ pub struct TokBuf<'a> {
 }
 
 impl<'a> TokBuf<'a> {
-    pub fn new(string_interner: &'a StrInterner) -> TokBuf<'a> {
+    /// Allocates a new [`TokBuf`] which can hold at least `capacity` tokens without
+    /// reallocating and copying. 
+    pub fn new(string_interner: &'a StrInterner, capacity: usize) -> TokBuf<'a> {
         return Self { 
             string_interner,
             str_table: StrList::default(),
-            buf: Vec::new(),
-            lines: Vec::new(),
+            // Worst case there are no packable tokens, therefore every token occupies an entire
+            // TokBufEntry.
+            buf: Vec::with_capacity(capacity),
+            // Worst case the file is comprised completely of linebreaks with no other tokens.
+            // Therefore, for `capacity` tokens there are `capacity` lines.
+            lines: Vec::with_capacity(capacity),
             len: 0
         };
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.buf.shrink_to_fit();
+        self.lines.shrink_to_fit();
+        self.str_table.shrink_to_fit();
     }
 
     fn push_static_tok(&mut self, stok: StaticTok) {
@@ -227,7 +239,7 @@ mod test_tok_buf {
     #[test]
     fn test_static_pack() {
         let interner = StrInterner::default();
-        let mut tokbuf = TokBuf::new(&interner);
+        let mut tokbuf = TokBuf::new(&interner, 4);
         tokbuf.push(Tok::Static(StaticTok::If));
         tokbuf.push(Tok::Static(StaticTok::Let));
         tokbuf.push(Tok::Static(StaticTok::Ampersand));
@@ -242,7 +254,7 @@ mod test_tok_buf {
     #[test]
     fn test_str_literal() {
         let interner = StrInterner::default();
-        let mut tokbuf = TokBuf::new(&interner);
+        let mut tokbuf = TokBuf::new(&interner, 1);
         const SOURCE_TEXT: &'static [u8] = "\"Hello World\"".as_bytes();
         tokbuf.push(Tok::StrLiteral(StrLiteral { str_ref: StrRef::Slice(SOURCE_TEXT) }));
         let toks: Vec<Tok> = tokbuf.iter().collect();
@@ -253,7 +265,7 @@ mod test_tok_buf {
     #[test]
     fn test_ident() {
         let interner = StrInterner::default();
-        let mut tokbuf = TokBuf::new(&interner);
+        let mut tokbuf = TokBuf::new(&interner, 1);
         const SOURCE_TEXT: &'static [u8] = "main".as_bytes();
         tokbuf.push(Tok::Ident(Ident::new(SOURCE_TEXT)));
         let toks: Vec<Tok> = tokbuf.iter().collect();

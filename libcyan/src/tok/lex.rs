@@ -8,6 +8,8 @@ use crate::tok::ident::{Ident, iter_ident_prefix_chs, is_ident_prefix_ch, is_ide
 use crate::tok::tok::Align;
 use crate::util::str_list::StrRef;
 
+// -- ByteStream ---------------------------------------------------------------------------------
+
 struct ByteStream<'a> { bytes: &'a [u8], pos: usize }
 
 impl<'a> ByteStream<'a> {
@@ -41,6 +43,8 @@ impl<'a> ByteStream<'a> {
     }
 }
 
+// -- Support ------------------------------------------------------------------------------------
+
 enum Prefix {
     DoubleQuote,
     Digit,
@@ -69,27 +73,40 @@ static PREFIX_TREE: LazyLock<PrefixTree<Prefix>> = LazyLock::new(|| {
     return tree;
 });
 
-
-pub fn lex<'a>(source_text: &[u8], tokbuf: &mut TokBuf<'a>) {
-    let mut ctx = LexContext { tokbuf, stream: ByteStream::new(source_text) };
-    
-    while ctx.stream.rem().len() > 0 {
-        match PREFIX_TREE.get(ctx.stream.rem().iter().copied()) {
-            Some(Prefix::DoubleQuote) => lex_double_quote(&mut ctx),
-            Some(Prefix::Digit) => lex_digit(&mut ctx),
-            Some(Prefix::Static(stok)) => lex_stok(&mut ctx, *stok),
-            Some(Prefix::Linebreak) => lex_linebreak(&mut ctx),
-            Some(Prefix::Space) => lex_space(&mut ctx),
-            Some(Prefix::DoubleForwardSlash) => lex_double_forward_slash(&mut ctx), 
-            Some(Prefix::IdentPrefixCh) => lex_ident_prefix_ch(&mut ctx, 0), 
-            None => lex_other(&mut ctx)
-        }
-    }    
-}
-
 struct LexContext<'a, 'b, 'c> {
     tokbuf: &'c mut TokBuf<'a>,
-    stream: ByteStream<'b>
+    stream: &'c mut ByteStream<'b>
+}
+
+impl<'a, 'b, 'c> LexContext<'a, 'b, 'c> {
+    fn new(tokbuf: &'c mut TokBuf<'a>, stream: &'c mut ByteStream<'b>) -> Self {
+        return Self { tokbuf, stream };
+    }
+}
+
+// -- Lexer --------------------------------------------------------------------------------------
+
+pub fn lex<'a>(source_text: &[u8], interner: &'a StrInterner) -> TokBuf<'a> {
+    let mut tokbuf = TokBuf::new(interner, source_text.len());
+    let mut stream = ByteStream::new(source_text);
+    lex_loop(&mut LexContext::new(&mut tokbuf, &mut stream));
+    tokbuf.shrink_to_fit();
+    return tokbuf;
+}
+
+fn lex_loop<'a>(ctx: &mut LexContext) {
+    while ctx.stream.rem().len() > 0 {
+        match PREFIX_TREE.get(ctx.stream.rem().iter().copied()) {
+            Some(Prefix::DoubleQuote) => lex_double_quote(ctx),
+            Some(Prefix::Digit) => lex_digit(ctx),
+            Some(Prefix::Static(stok)) => lex_stok(ctx, *stok),
+            Some(Prefix::Linebreak) => lex_linebreak(ctx),
+            Some(Prefix::Space) => lex_space(ctx),
+            Some(Prefix::DoubleForwardSlash) => lex_double_forward_slash(ctx), 
+            Some(Prefix::IdentPrefixCh) => lex_ident_prefix_ch(ctx, 0), 
+            None => lex_other(ctx)
+        }
+    }    
 }
 
 fn lex_double_quote(ctx: &mut LexContext) {
@@ -183,8 +200,7 @@ mod test_lex {
         ".as_bytes();
         
         let string_interner = StrInterner::default();
-        let mut tokbuf = TokBuf::new(&string_interner);
-        lex(source_text, &mut tokbuf);
+        let mut tokbuf = lex(source_text, &string_interner);
         let toks: Vec<Tok> = tokbuf.iter().collect();
         
         assert_matches!(toks[0], Tok::Static(StaticTok::Proc));
@@ -217,8 +233,7 @@ mod test_lex {
         let source_text = "procaaaa".as_bytes();     
 
         let string_interner = StrInterner::default();
-        let mut tokbuf = TokBuf::new(&string_interner);
-        lex(source_text, &mut tokbuf);
+        let mut tokbuf = lex(source_text, &string_interner);
         let toks: Vec<Tok> = tokbuf.iter().collect();
 
         assert_eq!(toks.len(), 1);

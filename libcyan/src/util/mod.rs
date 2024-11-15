@@ -5,3 +5,4 @@ pub mod ascii;
 pub mod bits;
 pub mod str_list;
 pub mod str_interner;
+pub mod inline_vec;

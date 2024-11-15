@@ -52,6 +52,10 @@ impl<'a> TokStream<'a> {
 
 // -- Support ------------------------------------------------------------------------------------
 
+struct ParsePanic;
+
+type ParseResult<T> = Result<T, ParsePanic>;
+
 struct ParseContext<'a, 'b, 'c> {
     stream: &'a mut TokStream<'b>,
     ast_mem: &'c mut BumpAllocator
@@ -61,11 +65,13 @@ impl<'a, 'b, 'c> ParseContext<'a, 'b, 'c> {
     fn new(stream: &'a mut TokStream<'b>, ast_mem: &'c mut BumpAllocator) -> Self {
         Self { stream, ast_mem  }
     }
+
+    fn expect_ref<C: TokClass>(&mut self) -> ParseResult<TokRef<C>> {    
+        if let Some(tokref) = self.stream.consume_ref::<C>() { return Ok(tokref); };
+        // TODO: We have to report an error here. Everytime we ParsePanic we must report an error.
+        return Err(ParsePanic);
+    }
 }
-
-struct ParsePanic;
-
-type ParseResult<T> = Result<T, ParsePanic>;
 
 // -- Parser -------------------------------------------------------------------------------------
 

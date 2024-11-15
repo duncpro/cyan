@@ -35,6 +35,11 @@ impl StrList {
         let s = &arr[content_begin_idx..(content_begin_idx + len)];
         return unsafe { std::mem::transmute(s) };
     }
+
+    pub fn shrink_to_fit(&self) {
+        let mut arr = self.state.write().unwrap();
+        arr.shrink_to_fit();
+    }
 }
 
 
