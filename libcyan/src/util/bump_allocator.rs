@@ -37,8 +37,21 @@ impl BumpAllocator {
         return handle;
     }
 
-    pub unsafe fn deref<'a, T>(&'a self, handle: Handle<T>) -> &'a T {
+    /// Given a handle to an object in the allocation, returns a constant pointer to that object.
+    ///
+    /// Safety: This procedure is unsafe because invoking it with a foreign handle may
+    /// produce an inconsistently typed pointer (pointer is type *T but T is not at the address).
+    pub unsafe fn get<T>(&self, handle: Handle<T>) -> *const T {
+        return self.get_mut(handle);
+    }
+    
+    /// Given a handle to an object in the allocation, returns a mutable pointer to that object.
+    ///
+    /// Safety: This procedure is unsafe because invoking it with a foreign handle may
+    /// produce an inconsistently typed pointer (pointer is type *T but T is not at the address).
+    pub unsafe fn get_mut<T>(&self, handle: Handle<T>) -> *mut T {
         let offset = usize::try_from(handle.key.get() - 1).unwrap();
+        assert!(offset < self.size);
         let ptr = self.ptr.add(offset);
         return std::mem::transmute(ptr);
     }

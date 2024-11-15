@@ -37,16 +37,19 @@ pub struct Root {
     pub ll_head: Option<AstRef<TopLevelItemNode>>
 }
 
-pub struct TopLevelItemNode {
-    value: TopLevelItem,
-    next: Option<AstRef<Self>>
-}
-
 #[repr(u8)]
 pub enum TopLevelItem {
     Proc(ProcDefinition)
 }
 
+pub struct TopLevelItemNode {
+    pub item: TopLevelItem,
+    pub next: Option<AstRef<Self>>
+}
+
+impl TopLevelItemNode {
+    pub fn new(item: TopLevelItem) -> Self { return Self { item, next: None  }; }
+}
 
 // -- Expressions --------------------------------------------------------------------------------
 
