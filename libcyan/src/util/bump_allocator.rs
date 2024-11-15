@@ -65,3 +65,13 @@ impl BumpAllocator {
         return Self { ptr, align, size, pos: 0 };
     }
 }
+
+pub trait LLNode: Sized {
+    fn next_mut(&mut self) -> &mut Option<Handle<Self>>;
+}
+
+pub fn extend_ll<T: LLNode>(mem: &mut BumpAllocator, tail: &mut &mut Option<Handle<T>>, with: T) {
+    let handle = mem.bump(with);
+    **tail = Some(handle);
+    *tail = unsafe { (*mem.get_mut(handle)).next_mut() };
+}

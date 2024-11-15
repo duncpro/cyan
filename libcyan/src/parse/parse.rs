@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use crate::tok::tokbuf::{TokBuf, TokCursor};
 use crate::tok::class::{delims, Ident, ItemDeclarator, TokClass, TokRef};
 use crate::parse::ast::{self, Ast, AstRef, calc_ast_size_upperbound, AST_ALIGN};
-use crate::util::bump_allocator::BumpAllocator;
+use crate::util::bump_allocator::{BumpAllocator, extend_ll};
 
 // -- TokStream ----------------------------------------------------------------------------------
 
@@ -91,9 +91,7 @@ fn parse_root(ctx: &mut ParseContext) -> ast::Root {
             ctx.stream.sync::<ItemDeclarator>();
             continue;
         };
-        let node_handle = ctx.ast_mem.bump(ast::TopLevelItemNode::new(tl_item));
-        *next = Some(node_handle);
-        next = unsafe { &mut (*ctx.ast_mem.get_mut(node_handle)).next };
+        extend_ll(ctx.ast_mem, &mut next, ast::TopLevelItemNode::new(tl_item));
     }
 
     return ast::Root { ll_head };

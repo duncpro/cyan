@@ -6,7 +6,7 @@
 ///! - The type **must** be included in `MAX_NODE_SIZE` in `calc_ast_size_upperbound`!
 
 use crate::tok::class::{delims, BinaryOperator, Ident, Literal, TokRef};
-use crate::util::bump_allocator::{self, BumpAllocator};
+use crate::util::bump_allocator::{self, BumpAllocator, LLNode};
 use crate::util::misc::max_of_usizes;
 
 // -- Support ------------------------------------------------------------------------------------
@@ -49,6 +49,12 @@ pub struct TopLevelItemNode {
 
 impl TopLevelItemNode {
     pub fn new(item: TopLevelItem) -> Self { return Self { item, next: None  }; }
+}
+
+impl LLNode for TopLevelItemNode {
+    fn next_mut(&mut self) -> &mut Option<AstRef<Self>> {
+        return &mut self.next;
+    }
 }
 
 // -- Expressions --------------------------------------------------------------------------------
