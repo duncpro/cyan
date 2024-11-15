@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 use crate::tok::tok::{StaticTok, Tok, StrLiteral, DecIntLiteral};
-use crate::tok::tokbuf::Key;
+use crate::tok::tokbuf::{TokCursor, Key};
 
 /// A 32-bit pointer to a token inside of the token buffer.
 /// In an abstract sense, `TokRef`s are the leaves of the AST.
@@ -18,7 +18,7 @@ pub trait TokClass {
 
     /// If `tok` is a member of this class, returns `Some(Self::View)`,
     /// otherwise returns `None`.
-    fn classify<'a>(tok: &'a Tok<'a>) -> Option<Self::View<'a>>;
+    fn classify<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>>;
 }
 
 impl<C: TokClass> Clone for TokRef<C> {
@@ -26,6 +26,19 @@ impl<C: TokClass> Clone for TokRef<C> {
 }
 
 impl<C: TokClass> Copy for TokRef<C> {}
+
+impl<'a> TokCursor<'a> {
+    pub fn try_make_ref<C: TokClass>(&self) -> Option<TokRef<C>> {
+        let next = self.read_tok()?;
+        if C::classify(&next).is_none() { return None; }
+        return Some(TokRef { pd: PhantomData, key: self.at() });
+    }
+
+    pub fn try_read_class<C: TokClass>(&self) -> Option<C::View<'a>> {
+        let next = self.read_tok()?;
+        return C::classify(&next);
+    }
+}
 
 // -- Binary Operators ---------------------------------------------------------------------------
 
@@ -63,11 +76,11 @@ impl TokClass for BinaryOperator {
 pub struct Ident;
 
 impl TokClass for Ident {
-    type View<'a> = &'a crate::tok::ident::Ident<'a>;
+    type View<'a> = crate::tok::ident::Ident<'a>;
 
-    fn classify<'a>(tok: &'a Tok<'a>) -> Option<Self::View<'a>> {
+    fn classify<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
         match tok {
-            Tok::Ident(ident) => Some(ident),
+            Tok::Ident(ident) => Some(*ident),
             _ => None
         }
     }
@@ -77,18 +90,18 @@ impl TokClass for Ident {
 
 #[derive(Clone, Copy, Debug)]
 pub enum AnyLiteral<'a> {
-    Str(&'a StrLiteral<'a>),
-    DecInt(&'a DecIntLiteral<'a>)
+    Str(StrLiteral<'a>),
+    DecInt(DecIntLiteral<'a>)
 }
 
 pub struct Literal;
 
 impl TokClass for Literal {
     type View<'a> = AnyLiteral<'a>;
-    fn classify<'a>(tok: &'a Tok<'a>) -> Option<Self::View<'a>> {
+    fn classify<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
         match tok {
-            Tok::StrLiteral(lit) => Some(AnyLiteral::Str(lit)),
-            Tok::DecIntLiteral(lit) => Some(AnyLiteral::DecInt(lit)),
+            Tok::StrLiteral(lit) => Some(AnyLiteral::Str(*lit)),
+            Tok::DecIntLiteral(lit) => Some(AnyLiteral::DecInt(*lit)),
             _ => None
         }
     }
@@ -107,7 +120,7 @@ pub mod delims {
             impl TokClass for $id {
                 type View<'a> = Self;
                 
-                fn classify<'a>(tok: &'a Tok<'a>) -> Option<Self::View<'a>> {
+                fn classify<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
                     match tok {
                         Tok::Static(StaticTok::$id) => Some(Self),
                         _ => None
@@ -138,7 +151,7 @@ pub enum ItemDeclarator {
 impl TokClass for ItemDeclarator {
     type View<'a> = Self;
 
-    fn classify<'a>(tok: &'a Tok<'a>) -> Option<Self::View<'a>> {
+    fn classify<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
         match tok {
             Tok::Static(StaticTok::Proc) => Some(Self::Proc),
             Tok::Static(StaticTok::Struct) => Some(Self::Struct),

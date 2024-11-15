@@ -1,5 +1,6 @@
+use std::marker::PhantomData;
 use crate::tok::tokbuf::{TokBuf, TokCursor};
-use crate::tok::class::{TokClass, TokRef, delims, ItemDeclarator};
+use crate::tok::class::{delims, Ident, ItemDeclarator, TokClass, TokRef};
 use crate::parse::ast::{self, Ast, AstRef, calc_ast_size_upperbound, AST_ALIGN};
 use crate::util::bump_allocator::BumpAllocator;
 
@@ -12,20 +13,40 @@ impl<'a> TokStream<'a> {
         Self { cursor: TokCursor::new(tokbuf) }
     }
     
-    fn expect<C: TokClass>(&mut self) -> Option<TokRef<C>> {
-        todo!()
+    fn consume_ref<C: TokClass>(&mut self) -> Option<TokRef<C>> {
+        let tokref = self.cursor.try_make_ref()?;
+        self.cursor.advance();
+        return Some(tokref);
     }
 
-    fn peek<C: TokClass>(&self) -> Option<C> {
-        todo!()
+    fn peek<C: TokClass>(&self) -> Option<C::View<'a>> {
+        return self.cursor.try_read_class::<C>();
     }
 
-    fn assert<C: TokClass>(&mut self) -> TokRef<C> {
-        todo!()
+    /// Consumes the next token in the stream, which is expected to be in class `C`,
+    /// and returns a reference to it. If the next token is not in class `C` or the buffer is
+    /// empty, panics.
+    ///
+    /// # Purpose: Dispatch-Then-Claim
+    /// This procedure is intended to facilitate the DIspatch-Then-Claim pattern.
+    /// A dispatcher procedure maintains a jump table whose key is computed by peeking the next
+    /// token in the stream. Then the delegate procedure consumes the token, placing it in the AST.
+    fn assert_ref<C: TokClass>(&mut self) -> TokRef<C> {
+        let Some(tokref) = self.cursor.try_make_ref() else {
+            panic!("Expected token of class {} but next token does not qualify.",
+                std::any::type_name::<C>());
+        };
+        return tokref;
     }
 
+    /// Consumes and discards all tokens up to but not including the next occurence of `C`.
     fn sync<C: TokClass>(&mut self) {
-        todo!()
+        while let Some(next) = self.cursor.read_tok() {
+            if C::classify(&next).is_some() {
+                return;
+            }
+            self.cursor.advance();
+        }
     }
 }
 
@@ -91,7 +112,19 @@ fn parse_tl_item(ctx: &mut ParseContext, declarator: ItemDeclarator)
 }
 
 fn parse_proc_def(ctx: &mut ParseContext) -> ParseResult<ast::ProcDefinition> {
-    let proc_keyword = ctx.stream.assert::<delims::Proc>();
+    let proc_keyword = ctx.stream.assert_ref::<delims::Proc>();
+    let Some(name) = ctx.stream.consume_ref::<Ident>() else {
+        // TODO: We have to report an error here. Everytime we ParsePanic we must report an error.
+        return Err(ParsePanic);
+    };
+    let parameters = parse_parameters(ctx);
     todo!()
 }
 
+fn parse_parameters(ctx: &mut ParseContext) -> ParseResult<ast::Parameters> {
+    todo!()
+}
+
+fn parse_type(ctx: &mut ParseContext) -> ParseResult<ast::Type> {
+    todo!();
+}

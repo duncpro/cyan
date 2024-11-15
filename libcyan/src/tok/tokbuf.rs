@@ -359,7 +359,7 @@ impl<'a> TokCursor<'a> {
 
     /// Returns the [`Tok`] at the cursor's position, or None if the cursor is at the
     /// end of the buffer.
-    pub fn read(&self) -> Option<Tok<'a>> { return self.tokbuf.get(self.pos_key); }
+    pub fn read_tok(&self) -> Option<Tok<'a>> { return self.tokbuf.get(self.pos_key); }
 
     /// Returns the [`Key`] of the next token in the buffer. 
     /// Or, if no tokens remain, the key points to a nonexistent token immediately past
@@ -369,7 +369,7 @@ impl<'a> TokCursor<'a> {
     pub fn has_next(&self) -> bool { return self.pos_idx < self.tokbuf.len(); }
 
     /// Advances the cursor past the next token in the buffer. If no tokens remain, this is a no-op.
-    pub fn forward(&mut self)  {
+    pub fn advance(&mut self)  {
         if !self.has_next() { return; }
 
         self.pos_idx += 1;
@@ -391,8 +391,8 @@ impl<'a> Iterator for TokBufIterator<'a> {
     type Item = Tok<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let elapsed = self.cursor.read();
-        self.cursor.forward();
+        let elapsed = self.cursor.read_tok();
+        self.cursor.advance();
         return elapsed;
     }
 }
