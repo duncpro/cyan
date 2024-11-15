@@ -27,7 +27,7 @@ impl<C: TokClass> Clone for TokRef<C> {
 
 impl<C: TokClass> Copy for TokRef<C> {}
 
-// Binary Operators
+// -- Binary Operators ---------------------------------------------------------------------------
 
 #[repr(u8)]
 #[derive(Clone, Copy)]
@@ -58,7 +58,7 @@ impl TokClass for BinaryOperator {
     }
 }
 
-// Ident
+// -- Ident --------------------------------------------------------------------------------------
 
 pub struct Ident;
 
@@ -94,12 +94,12 @@ impl TokClass for Literal {
     }
 }
 
+// -- Delimiters --------------------------------------------------------------------------------
+
 pub mod delims {
     use crate::tok::tok::{StaticTok, Tok};
     use super::TokClass;
     
-    pub trait Delim: TokClass {}
-
     macro_rules! make_delim_class {
         ($id:ident) => {
             pub struct $id;
@@ -114,8 +114,6 @@ pub mod delims {
                     }
                 }
             }
-    
-            impl Delim for $id {}
         };
     }
     
@@ -126,4 +124,27 @@ pub mod delims {
     make_delim_class!(Proc);
     make_delim_class!(Comma);
     make_delim_class!(Colon);
+}
+
+
+// -- TL Item Declarators -----------------------------------------------------------------------
+
+pub enum ItemDeclarator {
+    Proc,
+    Struct,
+    Enum
+}
+
+impl TokClass for ItemDeclarator {
+    type View<'a> = Self;
+
+    fn classify<'a>(tok: &'a Tok<'a>) -> Option<Self::View<'a>> {
+        match tok {
+            Tok::Static(StaticTok::Proc) => Some(Self::Proc),
+            Tok::Static(StaticTok::Struct) => Some(Self::Struct),
+            Tok::Static(StaticTok::Enum) => Some(Self::Enum),
+            _ => None
+        }
+    }
+    
 }

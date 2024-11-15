@@ -49,7 +49,8 @@ pub struct TokBuf<'a> {
     /// three static tokens per one [`TokBufEntry`]. 
     buf: Vec<TokBufEntry>,
     
-    lines: Vec<u32>
+    lines: Vec<u32>,
+    len: usize
 }
 
 impl<'a> TokBuf<'a> {
@@ -58,7 +59,8 @@ impl<'a> TokBuf<'a> {
             string_interner,
             str_table: StrList::default(),
             buf: Vec::new(),
-            lines: Vec::new()
+            lines: Vec::new(),
+            len: 0
         };
     }
 
@@ -141,10 +143,13 @@ impl<'a> TokBuf<'a> {
             Tok::LineComment(lc) => self.push_line_comment(lc),
             Tok::Unexpected(unexpected) => self.push_unexpected(unexpected),
         }
+        self.len += 1;
     }
 
+    pub fn len(&self) -> usize { return self.len; }
+
     pub fn iter(&'a self) -> impl Iterator<Item = Tok<'a>> + 'a {
-        return TokCursor::new(&self);
+        return TokBufIterator { cursor: TokCursor::new(&self) };
     }
 
     pub fn get(&'a self, key: Key) -> Option<Tok<'a>> {
@@ -342,46 +347,52 @@ impl TokBufEntry {
 
 #[derive(Clone, Copy)]
 pub struct TokCursor<'a> {
-    pos: Key,
+    pos_key: Key,
+    pos_idx: usize,
     tokbuf: &'a TokBuf<'a>
 }
 
 impl<'a> TokCursor<'a> {
     pub fn new(tokbuf: &'a TokBuf<'a>) -> Self {
-        Self { pos: Key::new(0, 0), tokbuf }
+        Self { pos_key: Key::new(0, 0), pos_idx: 0, tokbuf }
     }
 
     /// Returns the [`Tok`] at the cursor's position, or None if the cursor is at the
     /// end of the buffer.
-    pub fn read(&self) -> Option<Tok<'a>> { return self.tokbuf.get(self.pos); }
+    pub fn read(&self) -> Option<Tok<'a>> { return self.tokbuf.get(self.pos_key); }
 
     /// Returns the [`Key`] of the next token in the buffer. 
     /// Or, if no tokens remain, the key points to a nonexistent token immediately past
     /// the last real token in the buffer.
-    pub fn at(&self) -> Key { return self.pos; }
+    pub fn at(&self) -> Key { return self.pos_key; }
 
-    /// Advances the cursor past the next token in the buffer. 
-    /// If no tokens remain, this is a no-op.
+    pub fn has_next(&self) -> bool { return self.pos_idx < self.tokbuf.len(); }
+
+    /// Advances the cursor past the next token in the buffer. If no tokens remain, this is a no-op.
     pub fn forward(&mut self)  {
-        if self.read().is_none() { return; }
+        if !self.has_next() { return; }
 
-        let next_pack_key = Key::new(self.pos.addr(), self.pos.pack_idx() + 1);
+        self.pos_idx += 1;
+
+        let next_pack_key = Key::new(self.pos_key.addr(), self.pos_key.pack_idx() + 1);
         if self.tokbuf.get(next_pack_key).is_some() {
-            self.pos = next_pack_key;
+            self.pos_key = next_pack_key;
             return;
         }
 
-        let next_addr_key = Key::new(self.pos.addr() + 1, 0);
-        self.pos = next_addr_key;
+        let next_addr_key = Key::new(self.pos_key.addr() + 1, 0);
+        self.pos_key = next_addr_key;
     }  
 }
 
-impl<'a> Iterator for TokCursor<'a> {
+struct TokBufIterator<'a> { cursor: TokCursor<'a> }
+
+impl<'a> Iterator for TokBufIterator<'a> {
     type Item = Tok<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let elapsed = self.read();
-        self.forward();
+        let elapsed = self.cursor.read();
+        self.cursor.forward();
         return elapsed;
     }
 }
