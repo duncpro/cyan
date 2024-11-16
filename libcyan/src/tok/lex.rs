@@ -228,7 +228,7 @@ mod test_lex {
     }
 
     #[test]
-    fn test_keyword_identifer_disambiguation() {
+    fn test_keyword_identifier_disambiguation() {
         // This is an identifier even though it begins with a keyword.
         let source_text = "procaaaa".as_bytes();     
 

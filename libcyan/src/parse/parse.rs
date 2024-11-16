@@ -48,10 +48,11 @@ impl<'a> TokStream<'a> {
             panic!("Expected token of class {} but next token does not qualify.",
                 std::any::type_name::<C>());
         };
+        self.cursor.advance();
         return tokref;
     }
 
-    /// Consumes and discards all tokens up to but not including the next occurence of `C`.
+    /// Consumes and discards all tokens up to but not including the next occurrence of `C`.
     fn sync<C: TokClass>(&mut self) {
         while let Some(next) = self.cursor.read_tok() {
             if C::r#match(&next).is_some() {
@@ -113,6 +114,7 @@ pub fn parse(tokbuf: &TokBuf, source_unit: SourceUnitId, diagnostics: &mut Vec<A
     let mut stream = TokStream::new(tokbuf);
     let mut mem = AstAllocator::new(calc_ast_size_upperbound(tokbuf.len()));
     let root = parse_root(&mut ParseContext::new(&mut stream, &mut mem, source_unit, diagnostics));
+    mem.shrink_to_fit();
     return Ast { mem, root };
 }
 
@@ -213,7 +215,6 @@ fn parse_line_comment(ctx: &mut ParseContext) -> ParseResult<ast::LineComment> {
     return Ok(ast::LineComment { tok })
 }
 
-
 fn parse_imperative_block(ctx: &mut ParseContext) -> ParseResult<ast::ImperativeBlock> {
     let open_curly = ctx.expect_ref::<delims::OpenCurly>()?;
     let mut first: Option<AstRef<ast::StatementNode>> = None;
@@ -229,4 +230,29 @@ fn parse_imperative_block(ctx: &mut ParseContext) -> ParseResult<ast::Imperative
 
 fn parse_statement(ctx: &mut ParseContext) -> ParseResult<ast::AnyStatement> {
     todo!()
+}
+
+// -- Tests --------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod test_parser {
+    use crate::diagnostic::AnyDiagnostic;
+    use crate::tok::lex::lex;
+    use crate::util::str_interner::StrInterner;
+    use super::parse;
+    
+    #[test]
+    fn smoke_test() {
+        const SOURCE_TEXT: &'static str = "\
+            proc main(): int {    \n\
+                \n\
+            }\
+        ";
+
+        let string_interner = StrInterner::default();
+        let tokbuf = lex(SOURCE_TEXT.as_bytes(), &string_interner);
+        let mut diagnostics: Vec<AnyDiagnostic> = Vec::new();
+        let ast = parse(&tokbuf, 0, &mut diagnostics);
+        assert!(diagnostics.is_empty());
+    }
 }
