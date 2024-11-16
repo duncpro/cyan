@@ -6,6 +6,16 @@ pub struct InlineVec<T, const SIZE: usize> {
 }
 
 impl<T, const SIZE: usize> InlineVec<T, SIZE> {
+    pub fn from_array<const ARRAY_SIZE: usize>(array: [T; ARRAY_SIZE]) -> Self {
+        const {
+            assert!(ARRAY_SIZE <= SIZE);
+        }
+
+        let mut new_vec = Self::new();
+        for el in array { new_vec.push(el); }
+        return new_vec;
+    }
+    
     pub fn new() -> Self {
         return Self { 
             arr: [const { MaybeUninit::uninit() }; SIZE],
