@@ -5,6 +5,7 @@
 ///! - A test must verify the new type has `align_of` `AST_ALIGN`!
 ///! - The type **must** be included in `MAX_NODE_SIZE` in `calc_ast_size_upperbound`!
 
+use crate::tok;
 use crate::tok::class::{delims, BinaryOperator, Ident, Literal, TokRef};
 use crate::util::bump_allocator::{self, BumpAllocator, LLNode};
 use crate::util::misc::max_of_usizes;
@@ -23,7 +24,7 @@ pub fn calc_ast_size_upperbound(tok_count: usize) -> usize {
     const MAX_NODE_SIZE: usize = max_of_usizes([
         size_of::<ExprNode>(),
         size_of::<ParameterNode>(),
-        size_of::<BlockStatementNode>(),
+        size_of::<StatementNode>(),
         size_of::<TopLevelItemNode>(),
     ]);
     return tok_count * MAX_NODE_SIZE;
@@ -39,7 +40,8 @@ pub struct Root {
 
 #[repr(u8)]
 pub enum TopLevelItem {
-    Proc(ProcDefinition)
+    Proc(ProcDefinition),
+    LineComment(LineComment)
 }
 
 pub struct TopLevelItemNode {
@@ -92,11 +94,12 @@ pub struct NamedType { name: TokRef<Ident> }
 // -- Procedure Definition ----------------------------------------------------------------------
 
 pub struct ProcDefinition {
-    proc_keyword: TokRef<delims::Proc>,
-    proc_name: TokRef<Ident>,
-    return_type: Option<Type>,
-    parameters: Parameters,
-    body: Block
+    pub proc_keyword: TokRef<delims::Proc>,
+    pub ident: TokRef<Ident>,
+    pub parameters: Parameters,
+    pub return_type_separator: TokRef<delims::Colon>,
+    pub return_type: Type,
+    pub body: ImperativeBlock
 }
 
 pub struct Parameters {    
@@ -118,16 +121,37 @@ pub struct ParameterNode {
 
 // -- Statements ---------------------------------------------------------------------------------
 
-pub struct Block {
+pub struct ImperativeBlock {
     open_curly: TokRef<delims::OpenCurly>,
     close_curly: TokRef<delims::CloseCurly>,
-    first_statement: Option<AstRef<BlockStatementNode>>,
+    first_statement: Option<AstRef<StatementNode>>,
 }
 
-pub struct BlockStatementNode {
-    next: Option<AstRef<BlockStatementNode>>
+#[repr(u8)]
+pub enum AnyStatement {
+    LineComment
 }
 
+pub struct StatementNode {
+    value: AnyStatement,
+    next: Option<AstRef<StatementNode>>
+}
+
+impl StatementNode {
+    pub fn new(value: AnyStatement) -> Self { return Self { value, next: None }; }
+}
+
+impl LLNode for StatementNode {
+    fn next_mut(&mut self) -> &mut Option<AstRef<Self>> {
+        return &mut self.next;
+    }
+}
+
+// -- Line Comment -------------------------------------------------------------------------------
+
+pub struct LineComment {
+    pub tok: TokRef<tok::class::LineComment>
+}
 
 // -- Tests --------------------------------------------------------------------------------------
 
@@ -139,7 +163,7 @@ pub mod ast_tests {
     fn verify_align() {
         assert_eq!(AST_ALIGN, align_of::<ExprNode>());
         assert_eq!(AST_ALIGN, align_of::<ParameterNode>());
-        assert_eq!(AST_ALIGN, align_of::<BlockStatementNode>());
+        assert_eq!(AST_ALIGN, align_of::<StatementNode>());
         assert_eq!(AST_ALIGN, align_of::<TopLevelItemNode>());
     }
 }

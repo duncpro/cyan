@@ -1,8 +1,9 @@
 use std::marker::PhantomData;
 use crate::diagnostic::{self, AnyDiagnostic};
 use crate::source_unit::SourceUnitId;
+use crate::tok;
 use crate::tok::tokbuf::{TokBuf, TokCursor};
-use crate::tok::class::{delims, Ident, ItemDeclarator, TokClass, TokRef};
+use crate::tok::class::{delims, TokClass, TokRef};
 use crate::parse::ast::{self, Ast, AstRef, calc_ast_size_upperbound, AST_ALIGN};
 use crate::util::bump_allocator::{BumpAllocator, extend_ll};
 
@@ -19,8 +20,8 @@ impl<'a> TokStream<'a> {
     /// the next token in the stream is in the token-class `C`. If so, consumes it and returns
     /// a reference to it. Otherwise, returns `None` and doesnt consume it.
     fn consume_ref<C: TokClass>(&mut self) -> Option<TokRef<C>> {
-        self.discard_formatting();
-        let tokref = self.cursor.try_make_ref()?;
+        self.discard::<tok::class::Formatting>();
+        let tokref = self.cursor.match_ref()?;
         self.cursor.advance();
         return Some(tokref);
     }
@@ -29,23 +30,21 @@ impl<'a> TokStream<'a> {
     /// the next token in the stream is in the token-class `C`. If so, returns it, but does not
     /// consume it. Otherwise, returns `None` and doesnt consume it.
     fn peek<C: TokClass>(&mut self) -> Option<C::View<'a>> {
-        self.discard_formatting();
-        return self.cursor.try_read_class::<C>();
+        self.discard::<tok::class::Formatting>();
+        return self.cursor.r#match::<C>();
     }
 
     /// Consumes the next token in the stream (which is asserted to be in class `C`). Then, returns
-    /// a reference to it. 
-    ///
-    /// If the next token is not in class `C` or the buffer is empty, panics.
-    ///
-    /// This procedure **does not** skip formatting tokens like whitespace and linebreaks.
+    /// a reference to it. If the next token is not in class `C` or the buffer is empty, panics.
+    /// Unlike many other matchers, this procedure **does not** ignore formatting tokens like 
+    /// whitespace and linebreaks.
     ///
     /// # Purpose: Dispatch-Then-Claim
     /// This procedure is intended to facilitate the Dispatch-Then-Claim pattern. A dispatcher
     /// procedure maintains a jump table whose key is computed by peeking the next token in the
     /// stream. Then the delegate procedure consumes the token, placing it in the AST.
     fn assert_ref<C: TokClass>(&mut self) -> TokRef<C> {
-        let Some(tokref) = self.cursor.try_make_ref() else {
+        let Some(tokref) = self.cursor.match_ref() else {
             panic!("Expected token of class {} but next token does not qualify.",
                 std::any::type_name::<C>());
         };
@@ -55,15 +54,18 @@ impl<'a> TokStream<'a> {
     /// Consumes and discards all tokens up to but not including the next occurence of `C`.
     fn sync<C: TokClass>(&mut self) {
         while let Some(next) = self.cursor.read_tok() {
-            if C::classify(&next).is_some() {
+            if C::r#match(&next).is_some() {
                 return;
             }
             self.cursor.advance();
         }
     }
 
-    fn discard_formatting(&mut self) {
-        todo!()
+    /// Consumes and discards the sequence of consecutive tokens matching the class `C`.
+    fn discard<C: TokClass>(&mut self) {
+        while self.cursor.r#match::<C>().is_some() {
+            self.cursor.advance();
+        }
     }
 }
 
@@ -119,15 +121,15 @@ fn parse_root(ctx: &mut ParseContext) -> ast::Root {
     while ctx.stream.cursor.has_next() {
         /// A source unit is a list of top level items.
         /// Every top level item begins with an `ItemDeclarator`.
-        let Some(declarator) = ctx.stream.peek::<ItemDeclarator>() else {
+        let Some(declarator) = ctx.stream.peek::<tok::class::ItemDeclarator>() else {
             let diagnostic = diagnostic::MissingTok::new(ctx.source_unit, ctx.stream.cursor.at());
             ctx.diagnostics.push(AnyDiagnostic::MissingTok(diagnostic));
-            ctx.stream.sync::<ItemDeclarator>();
+            ctx.stream.sync::<tok::class::ItemDeclarator>();
             continue;
         };
         let Ok(tl_item) = parse_tl_item(ctx, declarator) else {
             // The panic occurred within parse_tl_item. It was reported there.
-            ctx.stream.sync::<ItemDeclarator>();
+            ctx.stream.sync::<tok::class::ItemDeclarator>();
             continue;
         };
         extend_ll(ctx.ast_mem, &mut next, ast::TopLevelItemNode::new(tl_item));
@@ -137,22 +139,27 @@ fn parse_root(ctx: &mut ParseContext) -> ast::Root {
 }
 
 /// Parses the next top-level item (proc, struct, namespace, etc.).
-fn parse_tl_item(ctx: &mut ParseContext, declarator: ItemDeclarator) 
+fn parse_tl_item(ctx: &mut ParseContext, declarator: tok::class::ItemDeclarator) 
 -> ParseResult<ast::TopLevelItem> 
 {
+    use tok::class::ItemDeclarator::*;
     return Ok(match declarator {
-        ItemDeclarator::Proc => ast::TopLevelItem::Proc(parse_proc_def(ctx)?),
-        ItemDeclarator::Struct => todo!(),
-        ItemDeclarator::Enum => todo!(),
-        // TODO: We also accepts comments at the top level.
+        Proc => ast::TopLevelItem::Proc(parse_proc_def(ctx)?),
+        Struct => todo!(),
+        Enum => todo!(),
+        LineComment => ast::TopLevelItem::LineComment(parse_line_comment(ctx)?),
     });
 }
 
 fn parse_proc_def(ctx: &mut ParseContext) -> ParseResult<ast::ProcDefinition> {
     let proc_keyword = ctx.stream.assert_ref::<delims::Proc>();
-    let ident = ctx.expect_ref::<Ident>()?;
-    let parameters = parse_parameters(ctx);
-    todo!()
+    let ident = ctx.expect_ref::<tok::class::Ident>()?;
+    let parameters = parse_parameters(ctx)?;
+    let return_type_separator = ctx.expect_ref::<delims::Colon>()?;
+    let return_type = parse_type(ctx)?;
+    let body = parse_imperative_block(ctx)?;
+    return Ok(ast::ProcDefinition { proc_keyword, ident, parameters, return_type_separator,
+        return_type, body });
 }
 
 fn parse_parameters(ctx: &mut ParseContext) -> ParseResult<ast::Parameters> {
@@ -161,4 +168,14 @@ fn parse_parameters(ctx: &mut ParseContext) -> ParseResult<ast::Parameters> {
 
 fn parse_type(ctx: &mut ParseContext) -> ParseResult<ast::Type> {
     todo!();
+}
+
+fn parse_line_comment(ctx: &mut ParseContext) -> ParseResult<ast::LineComment> {
+    let tok = ctx.stream.assert_ref::<tok::class::LineComment>();
+    return Ok(ast::LineComment { tok })
+}
+
+
+fn parse_imperative_block(ctx: &mut ParseContext) -> ParseResult<ast::ImperativeBlock> {
+    todo!()
 }

@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
-use crate::tok::tok::{StaticTok, Tok, StrLiteral, DecIntLiteral};
+use crate::tok::tok::{self, StaticTok, Tok, StrLiteral, DecIntLiteral};
 use crate::tok::tokbuf::{TokCursor, Key};
 
-/// A 32-bit pointer to a token inside of the token buffer.
-/// In an abstract sense, `TokRef`s are the leaves of the AST.
+/// A 32-bit pointer to a token inside of the token buffer. In an abstract sense, `TokRef`s are
+/// the leaves of the AST.
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct TokRef<C: TokClass> {
@@ -11,14 +11,12 @@ pub struct TokRef<C: TokClass> {
     key: Key
 }
 
-/// Represents a class of tokens. For example "binary operators",
-/// "keywords", "boolean literals".
+/// Represents a class of tokens. For example "binary operators", "keywords", "boolean literals".
 pub trait TokClass {
     type View<'a>;
 
-    /// If `tok` is a member of this class, returns `Some(Self::View)`,
-    /// otherwise returns `None`.
-    fn classify<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>>;
+    /// If `tok` is a member of this class, returns `Some(Self::View)`, otherwise returns `None`.
+    fn r#match<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>>;
 }
 
 impl<C: TokClass> Clone for TokRef<C> {
@@ -28,15 +26,15 @@ impl<C: TokClass> Clone for TokRef<C> {
 impl<C: TokClass> Copy for TokRef<C> {}
 
 impl<'a> TokCursor<'a> {
-    pub fn try_make_ref<C: TokClass>(&self) -> Option<TokRef<C>> {
+    pub fn match_ref<C: TokClass>(&self) -> Option<TokRef<C>> {
         let next = self.read_tok()?;
-        if C::classify(&next).is_none() { return None; }
+        if C::r#match(&next).is_none() { return None; }
         return Some(TokRef { pd: PhantomData, key: self.at() });
     }
 
-    pub fn try_read_class<C: TokClass>(&self) -> Option<C::View<'a>> {
+    pub fn r#match<C: TokClass>(&self) -> Option<C::View<'a>> {
         let next = self.read_tok()?;
-        return C::classify(&next);
+        return C::r#match(&next);
     }
 }
 
@@ -57,7 +55,7 @@ pub enum BinaryOperator {
 impl TokClass for BinaryOperator {
     type View<'a> = Self;
 
-    fn classify<'a>(tok: &'a Tok<'a>) -> Option<Self::View<'a>> {
+    fn r#match<'a>(tok: &'a Tok<'a>) -> Option<Self::View<'a>> {
         match tok {
             Tok::Static(StaticTok::LessThan) => Some(Self::LessThan),
             Tok::Static(StaticTok::LessThanEq) => Some(Self::LessThanEq),
@@ -78,7 +76,7 @@ pub struct Ident;
 impl TokClass for Ident {
     type View<'a> = crate::tok::ident::Ident<'a>;
 
-    fn classify<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
+    fn r#match<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
         match tok {
             Tok::Ident(ident) => Some(*ident),
             _ => None
@@ -86,7 +84,7 @@ impl TokClass for Ident {
     }
 }
 
-// Literals
+// -- Literal -----------------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug)]
 pub enum AnyLiteral<'a> {
@@ -98,7 +96,7 @@ pub struct Literal;
 
 impl TokClass for Literal {
     type View<'a> = AnyLiteral<'a>;
-    fn classify<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
+    fn r#match<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
         match tok {
             Tok::StrLiteral(lit) => Some(AnyLiteral::Str(*lit)),
             Tok::DecIntLiteral(lit) => Some(AnyLiteral::DecInt(*lit)),
@@ -120,7 +118,7 @@ pub mod delims {
             impl TokClass for $id {
                 type View<'a> = Self;
                 
-                fn classify<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
+                fn r#match<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
                     match tok {
                         Tok::Static(StaticTok::$id) => Some(Self),
                         _ => None
@@ -145,19 +143,55 @@ pub mod delims {
 pub enum ItemDeclarator {
     Proc,
     Struct,
-    Enum
+    Enum,
+    LineComment
 }
 
 impl TokClass for ItemDeclarator {
     type View<'a> = Self;
 
-    fn classify<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
+    fn r#match<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
         match tok {
             Tok::Static(StaticTok::Proc) => Some(Self::Proc),
             Tok::Static(StaticTok::Struct) => Some(Self::Struct),
             Tok::Static(StaticTok::Enum) => Some(Self::Enum),
+            Tok::LineComment(_) => Some(Self::LineComment),
             _ => None
         }
     }
     
+}
+
+// -- Formatting ---------------------------------------------------------------------------------
+
+pub struct Formatting;
+
+impl TokClass for Formatting {
+    type View<'a> = Self;
+
+    fn r#match<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
+        match tok {
+            Tok::Static(StaticTok::Space) => Some(Self),
+            Tok::Linebreak => Some(Self),
+            Tok::Align(_) => Some(Self),
+            _ => None
+        }
+    }
+}
+
+// -- LineComment -------------------------------------------------------------------------------
+
+pub struct LineComment;
+
+pub struct LineCommentView<'a> { pub value: tok::LineComment<'a> }
+
+impl TokClass for LineComment {
+    type View<'a> = LineCommentView<'a>;
+
+    fn r#match<'a>(tok: &Tok<'a>) -> Option<Self::View<'a>> {
+        match *tok {
+            Tok::LineComment(value) => Some(LineCommentView { value }),
+            _ => None
+        }
+    }
 }
