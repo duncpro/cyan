@@ -1,9 +1,27 @@
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::sync::{Mutex, MutexGuard, RwLock};
+use std::sync::{Mutex, MutexGuard};
 use crate::util::str_list::{StrRef, StrList, StrListKey};
 use crate::util::bits::fast_hash;
 
+/// A facility for deduplicating strings. Given a multiset of strings, [`StrInterner`] assigns
+/// a unique [`StrListKey`] to each distinct string in the set.
+///
+/// Each distinct string in the multiset is stored exactly once. 
+///
+/// # Supported Operators
+/// - [`StrInterner::intern`] returns the unique key associated with the string `s`. 
+/// - [`StrInterner::str_list`] returns the deduplicated multiset (just a set) as a [`StrList`].
+///   The returned list can be used to retrieve the bytes of  a string given a [`StrListKey`].
+///
+/// # Runtime Complexity
+/// The worst-case runtime complexity of [`StrInterner::intern`] is `O(n)` where `n` is equal 
+/// to the number of bytes stored by the interner.
+/// 
+/// The average-case runtime complexity of [`StrInterner::intern`] is `O(m)` where `m` is the
+/// length of the string `s`. 
+///
+/// # Implementation
+/// This [`StrInterner`] is backed by a linear-probing hash table with a non-cryptographic
+/// hash function. 
 #[derive(Default, Debug)]
 pub struct StrInterner {
     table: Mutex<Table>,
