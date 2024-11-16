@@ -132,6 +132,8 @@ pub mod delims {
     make_delim_class!(CloseCurly);
     make_delim_class!(OpenParen);
     make_delim_class!(CloseParen);
+    make_delim_class!(LessThan);
+    make_delim_class!(GreaterThan);
     make_delim_class!(Proc);
     make_delim_class!(Comma);
     make_delim_class!(Colon);

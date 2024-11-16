@@ -71,6 +71,8 @@ impl<'a> TokStream<'a> {
 
 // -- Support ------------------------------------------------------------------------------------
 
+type AstAllocator = BumpAllocator<AST_ALIGN>;
+
 /// A `ParsePanic` is thrown when an unexpected token sequence is encountered.
 /// Important: The code that constructs a `ParsePanic` is **also responsible for** pushing
 /// a `Diagnostic`. 
@@ -83,13 +85,13 @@ type ParseResult<T> = Result<T, ParsePanic>;
 
 struct ParseContext<'a, 'b> {
     stream: &'a mut TokStream<'b>,
-    ast_mem: &'a mut BumpAllocator,
+    ast_mem: &'a mut AstAllocator,
     source_unit: SourceUnitId,
     diagnostics: &'a mut Vec<AnyDiagnostic>,
 }
 
 impl<'a, 'b> ParseContext<'a, 'b> {
-    fn new(stream: &'a mut TokStream<'b>, ast_mem: &'a mut BumpAllocator, source_unit: SourceUnitId,
+    fn new(stream: &'a mut TokStream<'b>, ast_mem: &'a mut AstAllocator, source_unit: SourceUnitId,
         diagnostics: &'a mut Vec<AnyDiagnostic>) -> Self 
     {
         Self { stream, ast_mem, source_unit, diagnostics }
@@ -109,7 +111,7 @@ pub fn parse(tokbuf: &TokBuf, source_unit: SourceUnitId, diagnostics: &mut Vec<A
 -> Ast 
 {
     let mut stream = TokStream::new(tokbuf);
-    let mut mem = BumpAllocator::new(calc_ast_size_upperbound(tokbuf.len()), AST_ALIGN);
+    let mut mem = AstAllocator::new(calc_ast_size_upperbound(tokbuf.len()));
     let root = parse_root(&mut ParseContext::new(&mut stream, &mut mem, source_unit, diagnostics));
     return Ast { mem, root };
 }
@@ -132,7 +134,7 @@ fn parse_root(ctx: &mut ParseContext) -> ast::Root {
             ctx.stream.sync::<tok::class::ItemDeclarator>();
             continue;
         };
-        extend_ll(ctx.ast_mem, &mut next, ast::TopLevelItemNode::new(tl_item));
+        extend_ll(ctx.ast_mem, &mut next, tl_item);
     }
 
     return ast::Root { ll_head };
@@ -140,14 +142,15 @@ fn parse_root(ctx: &mut ParseContext) -> ast::Root {
 
 /// Parses the next top-level item (proc, struct, namespace, etc.).
 fn parse_tl_item(ctx: &mut ParseContext, declarator: tok::class::ItemDeclarator) 
--> ParseResult<ast::TopLevelItem> 
+-> ParseResult<ast::AnyTopLevelItem> 
 {
     use tok::class::ItemDeclarator::*;
+    use ast::AnyTopLevelItem;
     return Ok(match declarator {
-        Proc => ast::TopLevelItem::Proc(parse_proc_def(ctx)?),
+        Proc => AnyTopLevelItem::Proc(parse_proc_def(ctx)?),
         Struct => todo!(),
         Enum => todo!(),
-        LineComment => ast::TopLevelItem::LineComment(parse_line_comment(ctx)?),
+        LineComment => AnyTopLevelItem::LineComment(parse_line_comment(ctx)?),
     });
 }
 
@@ -163,11 +166,46 @@ fn parse_proc_def(ctx: &mut ParseContext) -> ParseResult<ast::ProcDefinition> {
 }
 
 fn parse_parameters(ctx: &mut ParseContext) -> ParseResult<ast::Parameters> {
-    todo!()
+    let open_paren = ctx.expect_ref::<delims::OpenParen>()?;
+    let mut first: Option<AstRef<ast::ParameterNode>> = None;
+    let mut ll_next = &mut first;
+    loop {
+        if !ctx.stream.cursor.has_next() { break; }
+        if ctx.stream.peek::<delims::CloseParen>().is_some() { break; }
+        let ident = ctx.expect_ref::<tok::class::Ident>()?;
+        let colon = ctx.expect_ref::<delims::Colon>()?;
+        let ty = parse_type(ctx)?;
+        let comma = ctx.stream.consume_ref::<delims::Comma>();
+        extend_ll(ctx.ast_mem, &mut ll_next, ast::Parameter { ident, colon, ty, comma });
+        if comma.is_none() { break; }
+    }
+    let close_paren = ctx.expect_ref::<delims::CloseParen>()?;
+    return Ok(ast::Parameters { open_paren, close_paren, first });
 }
 
 fn parse_type(ctx: &mut ParseContext) -> ParseResult<ast::Type> {
-    todo!();
+    let ident = ctx.expect_ref::<tok::class::Ident>()?;
+    let mut arguments: Option<ast::TypeArguments> = None;
+    if ctx.stream.peek::<delims::LessThan>().is_some() {
+        arguments = Some(parse_type_arguments(ctx)?);
+    }
+    return Ok(ast::Type::NamedType(ast::NamedType { ident, arguments }));
+}
+
+fn parse_type_arguments(ctx: &mut ParseContext) -> ParseResult<ast::TypeArguments> {
+    let open_angle = ctx.stream.assert_ref::<delims::LessThan>();
+    let mut first: Option<AstRef<ast::TypeArgumentNode>> = None;
+    let mut ll_next = &mut first;
+    loop {
+        if !ctx.stream.cursor.has_next() { break; }
+        if ctx.stream.peek::<delims::GreaterThan>().is_some() { break; }
+        let ty = parse_type(ctx)?;
+        let comma = ctx.stream.consume_ref::<delims::Comma>();
+        extend_ll(ctx.ast_mem, &mut ll_next, ast::TypeArgument { ty, comma });
+        if comma.is_none() { break; }
+    }
+    let close_angle = ctx.expect_ref::<delims::GreaterThan>()?;
+    return Ok(ast::TypeArguments { open_angle, first, close_angle });
 }
 
 fn parse_line_comment(ctx: &mut ParseContext) -> ParseResult<ast::LineComment> {
@@ -177,5 +215,18 @@ fn parse_line_comment(ctx: &mut ParseContext) -> ParseResult<ast::LineComment> {
 
 
 fn parse_imperative_block(ctx: &mut ParseContext) -> ParseResult<ast::ImperativeBlock> {
+    let open_curly = ctx.expect_ref::<delims::OpenCurly>()?;
+    let mut first: Option<AstRef<ast::StatementNode>> = None;
+    let mut ll_next = &mut first;
+    loop {
+        if !ctx.stream.cursor.has_next() { break; }
+        if ctx.stream.peek::<delims::CloseCurly>().is_some() { break; }
+        // TODO: parse statement
+    }
+    let close_curly = ctx.expect_ref::<delims::CloseCurly>()?;
+    return Ok(ast::ImperativeBlock { open_curly, first, close_curly });
+}
+
+fn parse_statement(ctx: &mut ParseContext) -> ParseResult<ast::AnyStatement> {
     todo!()
 }

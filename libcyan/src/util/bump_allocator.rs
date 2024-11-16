@@ -17,16 +17,16 @@ impl<T> Copy for Handle<T> {}
 
 // -- BumpAllocator ------------------------------------------------------------------------------
 
-pub struct BumpAllocator {
+pub struct BumpAllocator<const ALIGN: usize> {
     layout: Layout,
     ptr: *mut u8,
     pos: usize
 }
 
-impl BumpAllocator {    
+impl<const ALIGN: usize> BumpAllocator<ALIGN> {    
     /// Allocates a new [`BumpAllocator`] arena with capacity `size` via the system allocator.
-    pub fn new(size: usize, align: usize) -> Self {
-        let layout = Layout::from_size_align(size, align).unwrap();
+    pub fn new(size: usize) -> Self {
+        let layout = Layout::from_size_align(size, ALIGN).unwrap();
         let ptr = unsafe { std::alloc::System.alloc(layout) };
         assert_ne!(ptr, std::ptr::null_mut());
         return Self { layout, ptr, pos: 0 };
@@ -37,9 +37,10 @@ impl BumpAllocator {
     ///
     /// This procedure will panic if `value` does not fit into the remaining free space in the arena.
     pub fn bump<T>(&mut self, value: T) -> Handle<T> {
-        assert_eq!(align_of::<T>(), self.layout.align(), "{}'s alignment ({}) does not match the \
-            allocator's ({}).", std::any::type_name::<T>(), align_of::<T>(), self.layout.align());
-        assert!(!std::mem::needs_drop::<T>());
+        const {
+            assert!(align_of::<T>() == ALIGN);
+            assert!(!std::mem::needs_drop::<T>());
+        }
         assert!(self.layout.size().saturating_sub(self.pos) >= size_of::<T>());
         let key = self.pos.checked_add(1).unwrap();
         let key = u32::try_from(key).ok().and_then(NonZeroU32::new).unwrap();
@@ -69,9 +70,9 @@ impl BumpAllocator {
     /// Moreover, this procedure can be misued to produce multiple exclusive references to the
     /// same memory address.
     pub unsafe fn get_mut<T>(&self, handle: Handle<T>) -> *mut T {
-        assert_eq!(align_of::<T>(), self.layout.align(), "{} does not have align {}, \
-            it could never have been allocated in this arena", std::any::type_name::<T>(),
-            self.layout.align());
+        const {
+            assert!(align_of::<T>() == ALIGN);
+        }
         let offset = usize::try_from(handle.key.get() - 1).unwrap();
         assert!(offset < self.layout.size());
         let ptr = self.ptr.add(offset);
@@ -87,7 +88,7 @@ impl BumpAllocator {
     }
 }
 
-impl Drop for BumpAllocator {
+impl<const ALIGN: usize> Drop for BumpAllocator<ALIGN> {
     fn drop(&mut self) {
         unsafe {
             std::alloc::System.dealloc(self.ptr, self.layout);
@@ -97,12 +98,15 @@ impl Drop for BumpAllocator {
 
 // -- Linked List Support ------------------------------------------------------------------------
 
-pub trait LLNode: Sized {
-    fn next_mut(&mut self) -> &mut Option<Handle<Self>>;
+pub struct LLNode<T> {
+    pub value: T,
+    pub next: Option<Handle<Self>>
 }
 
-pub fn extend_ll<T: LLNode>(mem: &mut BumpAllocator, tail: &mut &mut Option<Handle<T>>, with: T) {
-    let handle = mem.bump(with);
+pub fn extend_ll<const ALIGN: usize, T>(mem: &mut BumpAllocator<ALIGN>,
+    tail: &mut &mut Option<Handle<LLNode<T>>>, value: T) 
+{
+    let handle = mem.bump(LLNode { value, next: None });
     **tail = Some(handle);
-    *tail = unsafe { (*mem.get_mut(handle)).next_mut() };
+    *tail = unsafe { &mut (*mem.get_mut(handle)).next };
 }
